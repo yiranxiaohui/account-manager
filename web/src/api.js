@@ -186,6 +186,26 @@ export const api = {
       body: JSON.stringify(orgUuid ? { org_uuid: orgUuid } : {}),
     }).then(j),
 
+  sub2apiProxies: () => fetch("/api/sub2api/proxies").then(j),
+
+  sub2apiProxiesImport: (ids) =>
+    fetch("/api/sub2api/proxies/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(j),
+
+  sub2apiProxiesSync: () =>
+    fetch("/api/sub2api/proxies/sync", { method: "POST" }).then(j),
+
+  // body: { id }（代理池条目）或 { url }（未保存的地址）
+  proxyTest: (body) =>
+    fetch("/api/proxies/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(j),
+
   xuiTest: (node) =>
     fetch("/api/xui/test", {
       method: "POST",

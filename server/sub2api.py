@@ -142,6 +142,19 @@ class Sub2APIClient:
         return {"created": data["account_created"], "failed": data["account_failed"],
                 "failed_names": failed_names}
 
+    def list_proxies(self) -> list[dict]:
+        """sub2api 里所有启用中的代理（含账号数、延迟与地区）。
+
+        完整管理员 Key 会拿到用户名与密码；受限 Key 只有主机和端口。密码只留在
+        服务端组装代理地址，绝不原样回传给前端。
+        """
+        data = self._request("GET", "/proxies/all", params={"with_count": "true"})
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            data = data["items"]
+        if not isinstance(data, list):
+            raise Sub2APIError("sub2api 代理列表格式不正确")
+        return [p for p in data if isinstance(p, dict) and type(p.get("id")) is int and p["id"] > 0]
+
     def import_options(self) -> dict:
         groups = self._request("GET", "/groups/all", params={"platform": PLATFORM}, safe_errors=True)
         proxies = self._request("GET", "/proxies/all", safe_errors=True)

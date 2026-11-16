@@ -500,3 +500,11 @@ def test_build_options_plain_proxy():
     assert proxy == {"server": "http://1.2.3.4:8080"}
     assert relay is None          # 无认证不需要中继
     assert tz is None
+
+
+def test_ipv6_proxy_keeps_brackets():
+    from account_manager.browser import normalize_proxy_url, parse_proxy
+
+    assert parse_proxy("socks5://[2001:db8::1]:1080") == {"server": "socks5://[2001:db8::1]:1080"}
+    assert parse_proxy("http://u:p@[::1]:8080")["server"] == "http://[::1]:8080"
+    assert normalize_proxy_url("socks5h://u:p@[2001:db8::1]:1080") == "socks5://u:p@[2001:db8::1]:1080"

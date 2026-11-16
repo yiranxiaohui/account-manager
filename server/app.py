@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
-from account_manager import flow
+from account_manager import flow, proxy_probe
 from account_manager.accounts import AccountRecord
 from account_manager.anymail import AnyMailAccessError, AnyMailClient
 from account_manager.console import log
@@ -21,7 +21,7 @@ from account_manager.oauth import OAuthError
 from account_manager.proxy_pool import ProxyPool, XuiNode
 from account_manager.session_check import check_session, probe_session
 from account_manager.xui import XuiClient
-from server import auth, db, export, oauth_acquire, open_api, sk_import, sub2api
+from server import auth, db, export, oauth_acquire, open_api, sk_import, sub2api, sub2api_proxies
 from server.config_store import save_config, to_dict
 from server.deps import AppState, default_now
 from server.runner import RunnerBusy
@@ -161,6 +161,25 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         except ValueError:
             raise HTTPException(status_code=400, detail="所选代理地址无效，请编辑后重试") from None
         return selected["url"]
+
+    @app.post("/api/proxies/test")
+    async def proxy_test(request: Request, _=Depends(require_auth)):
+        """经代理探测出口 IP、地区与延迟。body: {id}（代理池条目）或 {url}（未保存的地址）。"""
+        body = await _json_object(request)
+        proxy_id, url = body.get("id"), body.get("url")
+        if isinstance(proxy_id, str) and proxy_id:
+            url = resolve_saved_proxy(state.config(), proxy_id)
+        elif isinstance(url, str) and url.strip():
+            from account_manager.browser import validate_proxy
+            url = url.strip()
+            try:
+                validate_proxy(url)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="代理地址无效，请使用带端口的 HTTP(S) 或 SOCKS 代理地址") from None
+        else:
+            raise HTTPException(status_code=400, detail="请提供代理 id 或地址")
+        result = await asyncio.to_thread(proxy_probe.probe_proxy, url)
+        return {**result, "tested_at": state.now_fn()}
 
     def start_registration(body: dict) -> int:
         """面板与开放 API 共用的注册入口：解析所选代理并启动 Runner。
@@ -795,6 +814,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         app, state, start_registration=start_registration, account_rows=_account_rows,
     )
     sub2api.register_sub2api_routes(app, state, require_auth=require_auth)
+    sub2api_proxies.register_sub2api_proxy_routes(app, state, require_auth=require_auth)
 
     # 前端（dist 存在才挂，测试环境无 dist 不报错）
     if WEB_DIST.exists():

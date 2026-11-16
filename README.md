@@ -168,6 +168,24 @@ sub2api 里的 Claude OAuth 账号 refresh_token 失效（如 `invalid_grant`）
   保留 `POST /api/v1/admin/accounts/data` 行为。创建前校验整批参数及代理/分组是否仍可用，展示成功/失败数量及失败账号名。
   部分失败时仅重新提交失败账号；连接中断时先核对 Sub2API 列表，避免重复创建账号。
 
+## 代理池
+
+「代理池」页保存常用代理（`config.yaml` 的 `register.proxies`），注册任务、sessionKey 导入、手动登录和
+开放 API 的 `proxy_id` 都从这里选。支持 HTTP(S) 与 SOCKS5（带认证的 SOCKS5 自动经本地中继）。
+
+- **测试**：单个 / 所选 / 全部测试（并发 4），经代理请求 ipinfo.io（失败依次换 ipwho.is、ipapi.co），
+  显示出口 IP、地区与延迟。结果只存在浏览器本地，代理的协议 / 主机 / 端口变化后自动作废；接口是
+  `POST /api/proxies/test`（body `{"id"}` 或 `{"url"}`），错误信息会抹掉代理凭据。
+- **从 sub2api 导入**：用「系统设置 → sub2api 对接」里的地址和管理员 API Key 读取
+  `GET /api/v1/admin/proxies/all?with_count=true`（只含启用中的代理），列出协议、地址、地区、延迟、
+  使用账号数与状态，勾选后导入。代理密码只在服务端组装地址并写入 `config.yaml`，列表接口不返回
+  用户名和密码。已过期、协议不支持、与代理池已有地址重复的不导入；受限管理员 Key
+  （自定义 Key，只有 `proxies.read`）读不到凭据，整批不可导入，需改用完整管理员 Key。
+- **同步 sub2api**：导入的条目记录来源实例与 sub2api 代理 ID（`source`、`source_id`、
+  `source_base_url`）。「同步 sub2api」按 sub2api 当前数据更新这些条目的地址与凭据，保留本地名称和
+  条目 ID；sub2api 中已删除或停用的只提示、不自动删除。来自其他 sub2api 实例的条目不参与同步。
+- 已绑定到账号的是代理地址本身：同步或删除代理池条目不会改动已有账号的代理字段。
+
 ## 开放 API（触发注册、按需导出）
 
 供外部脚本调用，与面板登录互相独立。

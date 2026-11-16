@@ -62,6 +62,11 @@ def mask_proxy(url: str) -> str:
     return url.replace(f":{parts.password}@", ":***@", 1)
 
 
+def _url_host(hostname: str) -> str:
+    """urlsplit 的 hostname 去掉了 IPv6 的方括号，拼回 URL 时要补上。"""
+    return f"[{hostname}]" if ":" in hostname else hostname
+
+
 def parse_proxy(url: str | None) -> dict | None:
     """把代理 URL 解析成 Playwright 风格 proxy dict。
 
@@ -90,7 +95,7 @@ def parse_proxy(url: str | None) -> dict | None:
             f"不支持的代理协议 {parts.scheme!r}（来自 {safe!r}）。"
             f"浏览器只支持：{'、'.join(sorted(_PLAYWRIGHT_SCHEMES))}。"
         )
-    proxy: dict = {"server": f"{scheme}://{parts.hostname}:{port}"}
+    proxy: dict = {"server": f"{scheme}://{_url_host(parts.hostname)}:{port}"}
     if scheme == "socks4" and (parts.username or parts.password):
         # SOCKS4 协议里没有用户名密码认证，Playwright 会把凭据默默丢掉。
         # 静默降级 = 用户以为在认证、实际裸连，还不如当场报错。
@@ -161,7 +166,7 @@ def normalize_proxy_url(url: str | None) -> str | None:
         if parts.password:
             auth += f":{parts.password}"
         auth += "@"
-    return f"{scheme}://{auth}{parts.hostname}:{parts.port}"
+    return f"{scheme}://{auth}{_url_host(parts.hostname)}:{parts.port}"
 
 
 def validate_proxy(url: str | None) -> dict | None:

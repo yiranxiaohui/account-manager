@@ -1,12 +1,16 @@
 """config.yaml 读写。替代 .env。"""
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
 
 REDACTED = "••••"
+# 读-改-写 config.yaml 的串行锁：面板保存与后台合并（如从 sub2api 导入代理）
+# 可能并发，不加锁会互相覆盖。可重入，调用方可在外层持锁后再调 save_config。
+CONFIG_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,11 @@ _FIELD_MAP = {
 
 
 def save_config(path: Path, updates: dict) -> Config:
+    with CONFIG_LOCK:
+        return _save_config(path, updates)
+
+
+def _save_config(path: Path, updates: dict) -> Config:
     cfg = load_config(path)
     # 密码/密钥留空 = 不修改
     clean = dict(updates)
@@ -166,6 +175,31 @@ def to_dict(cfg: Config) -> dict:
     return d
 
 
+# 代理条目来源：手动添加的条目不带 source；从 sub2api 导入的条目记下来源实例与
+# sub2api 代理 ID，之后「同步」时据此更新地址，并与手动条目区分展示。
+PROXY_SOURCE_SUB2API = "sub2api"
+_PROXY_LABEL_MAX = 120
+
+
+def _proxy_source(entry: dict) -> dict:
+    source = entry.get("source")
+    if source in (None, "", "manual"):
+        return {}
+    if source != PROXY_SOURCE_SUB2API:
+        raise ValueError("代理来源无效")
+    source_id = entry.get("source_id")
+    base = entry.get("source_base_url")
+    if type(source_id) is not int or source_id <= 0:
+        raise ValueError("sub2api 代理 ID 无效")
+    if not isinstance(base, str) or not base.strip():
+        raise ValueError("sub2api 代理缺少来源地址")
+    out = {"source": source, "source_id": source_id, "source_base_url": base.strip()}
+    location = entry.get("location")
+    if isinstance(location, str) and location.strip():
+        out["location"] = location.strip()[:_PROXY_LABEL_MAX]
+    return out
+
+
 def validate_saved_proxies(raw) -> tuple:
     from account_manager.browser import validate_proxy
 
@@ -186,6 +220,7 @@ def validate_saved_proxies(raw) -> tuple:
             validate_proxy(proxy["url"])
         except ValueError:
             raise ValueError("代理地址无效，请使用带端口的 HTTP(S) 或 SOCKS 代理地址") from None
+        proxy.update(_proxy_source(entry))
         ids.add(proxy["id"])
         entries.append(proxy)
     return tuple(entries)

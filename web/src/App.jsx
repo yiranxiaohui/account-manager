@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Users, Server, Settings as SettingsIcon, Sparkles, LogOut, KeyRound } from "lucide-react";
+import { Play, Users, Server, Settings as SettingsIcon, Sparkles, LogOut, KeyRound, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { api, SESSION_EXPIRED_EVENT } from "./api.js";
 import { useRunStream } from "./hooks/useRunStream.js";
@@ -30,7 +30,7 @@ const NAV = [
   { key: "register", label: "注册任务", description: "创建与监控自动化任务", Icon: Play },
   { key: "accounts", label: "账号管理", description: "查看账号状态与凭据", Icon: Users },
   { key: "sub2api", label: "sub2api 同步", description: "导入 OAuth 账号与重新授权", Icon: KeyRound },
-  { key: "proxies", label: "代理池", description: "管理网络出口", Icon: Server },
+  { key: "proxies", label: "代理池", description: "管理网络出口，可从 sub2api 导入", Icon: Globe },
   { key: "nodes", label: "节点设置", description: "配置 3x-ui 节点", Icon: Server },
   { key: "settings", label: "系统设置", description: "调整面板与注册参数", Icon: SettingsIcon },
 ];
@@ -202,7 +202,7 @@ function AppBody() {
             />
           )}
           {view === "sub2api" && <Sub2API navigate={navigate} />}
-          {view === "proxies" && <Proxies />}
+          {view === "proxies" && <Proxies navigate={navigate} />}
           {view === "nodes" && <Nodes />}
           {view === "settings" && <Settings />}
         </div>
