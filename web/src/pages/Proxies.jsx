@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
+import { m } from "motion/react";
 import { toast } from "sonner";
 import {
+  CircleCheck,
+  CircleX,
   Download,
   FlaskConical,
   Globe,
   KeyRound,
-  Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  SearchX,
+  Server,
   Trash2,
   TriangleAlert,
+  Users,
+  X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { cn } from "@/lib/utils";
@@ -22,11 +28,31 @@ import {
   protocolLabel,
   saveTestResults,
 } from "@/lib/proxy";
+import { PageHeader } from "@/components/page-header";
+import { StatCard, StatGrid } from "@/components/stat-card";
+import { Callout } from "@/components/callout";
+import { Pill } from "@/components/pill";
+import { TipButton } from "@/components/tip-button";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -34,10 +60,12 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ProxyEditDialog } from "@/components/proxy-edit-dialog";
 import { ProbeResult } from "@/components/proxy-probe-result";
+import { SegmentedTabs } from "@/components/segmented-tabs";
 import { Sub2apiProxyImportDialog } from "@/components/sub2api-proxy-import-dialog";
 
 const TEST_CONCURRENCY = 4;
@@ -58,19 +86,20 @@ function addrKey(url) {
 
 function SourceBadge({ entry, currentBase }) {
   if (!isSub2api(entry)) {
-    return <Badge variant="outline" className="rounded-full px-1.5 text-[10px] text-muted-foreground">手动</Badge>;
+    return <Badge variant="outline" className="font-normal text-muted-foreground">手动</Badge>;
   }
   const foreign = currentBase && entry.source_base_url !== currentBase;
   return (
-    <Badge
-      className={cn("rounded-full border-transparent px-1.5 text-[10px]",
-        foreign ? "bg-muted text-muted-foreground" : "bg-violet-500/15 text-violet-400")}
+    <Pill
+      tone={foreign ? "muted" : "highlight"}
       title={`来自 ${entry.source_base_url}${foreign ? "（不是当前配置的 sub2api，不参与同步）" : ""}`}
     >
       sub2api #{entry.source_id}
-    </Badge>
+    </Pill>
   );
 }
+
+const ROW_GRID = "grid grid-cols-[1rem_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_6rem] items-center gap-4";
 
 export default function Proxies({ navigate }) {
   const [items, setItems] = useState([]);
@@ -277,222 +306,222 @@ export default function Proxies({ navigate }) {
   ];
 
   return (
-    <>
-      <Card>
-        <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 basis-72 space-y-1.5">
-            <CardTitle className="flex items-center gap-2"><Globe className="size-4" /> 代理池</CardTitle>
-            <CardDescription>
-              保存常用代理，供注册任务、sessionKey 导入、手动登录与账号绑定选择；也可以直接导入 sub2api 里的代理。
-              账号只能使用这里的代理：修改地址后已绑定的账号会跟着使用新地址，仍被账号使用的代理不能删除。
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <div className="space-y-6">
+      <PageHeader
+        icon={Globe}
+        title="代理池"
+        description="保存常用代理，供注册任务、sessionKey 导入、手动登录与账号绑定选择；也可以直接导入 sub2api 里的代理。账号只能使用这里的代理：修改地址后已绑定的账号会跟着使用新地址，仍被账号使用的代理不能删除。"
+        actions={
+          <>
             {counts.sub2api > 0 && (
-              <Button variant="outline" size="sm" onClick={sync} disabled={busy}
-                title="按 sub2api 当前数据更新已导入代理的地址与凭据">
+              <TipButton variant="outline" onClick={sync} disabled={busy}
+                tip="按 sub2api 当前数据更新已导入代理的地址与凭据">
                 <RefreshCw className={cn(syncing && "animate-spin")} /> 同步 sub2api
-              </Button>
+              </TipButton>
             )}
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} disabled={busy}>
+            <Button variant="outline" onClick={() => setImportOpen(true)} disabled={busy}>
               <Download /> 从 sub2api 导入
             </Button>
-            <Button size="sm" onClick={() => setEdit({ open: true, entry: null })} disabled={busy}>
+            <Button onClick={() => setEdit({ open: true, entry: null })} disabled={busy}>
               <Plus /> 添加代理
             </Button>
-          </div>
-        </CardHeader>
+          </>
+        }
+      />
 
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              ["代理总数", counts.all, ""],
-              ["来自 sub2api", counts.sub2api, "text-violet-400"],
-              ["测试可用", counts.ok, "text-emerald-400"],
-              ["测试不可用", counts.failed, counts.failed ? "text-red-400" : ""],
-            ].map(([label, value, cls]) => (
-              <div key={label} className="rounded-lg border bg-background/40 px-3 py-2.5">
-                <div className="text-xs text-muted-foreground">{label}</div>
-                <div className={cn("mt-0.5 text-xl font-semibold tabular-nums", cls)}>{value}</div>
+      <StatGrid>
+        <StatCard index={0} label="代理总数" value={counts.all} icon={Server} tone="primary" />
+        <StatCard index={1} label="来自 sub2api" value={counts.sub2api} icon={Download} tone="highlight" />
+        <StatCard index={2} label="测试可用" value={counts.ok} icon={CircleCheck} tone="success" />
+        <StatCard index={3} label="测试不可用" value={counts.failed} icon={CircleX}
+          tone={counts.failed ? "danger" : "muted"}
+          onClick={counts.failed ? () => setFilter("failed") : undefined} active={filter === "failed"} />
+      </StatGrid>
+
+      {missingItems.length > 0 && (
+        <Callout
+          tone="warning"
+          icon={TriangleAlert}
+          title={`${missingItems.length} 个代理在 sub2api 中已删除或停用`}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => setMissing(new Set())}>忽略</Button>
+              <Button variant="destructive" size="sm" onClick={() => askDelete(missingItems)}>
+                <Trash2 /> 删除这些
+              </Button>
+            </>
+          }
+        >
+          {missingItems.slice(0, 3).map((p) => p.name).join("、")}
+          {missingItems.length > 3 ? " 等" : ""}
+        </Callout>
+      )}
+
+      <Card className="gap-0 py-0">
+        {items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b p-3">
+            <InputGroup className="min-w-56 flex-1">
+              <InputGroupAddon><Search /></InputGroupAddon>
+              <InputGroupInput placeholder="搜索名称、主机、地区、出口 IP…" value={query}
+                onChange={(e) => setQuery(e.target.value)} />
+              {query && (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton size="icon-xs" aria-label="清除搜索" onClick={() => setQuery("")}>
+                    <X />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
+            <SegmentedTabs value={filter} onChange={setFilter} items={tabs} />
+            {selectedVisible.length > 0 ? (
+              <>
+                <Button variant="outline" disabled={busy} onClick={() => testMany(selectedVisible)}>
+                  {batch ? <Spinner /> : <FlaskConical />}
+                  {batch ? `测试中 ${batch.done}/${batch.total}` : `测试所选（${selectedVisible.length}）`}
+                </Button>
+                <Button variant="destructive" disabled={busy} onClick={() => askDelete(selectedVisible)}>
+                  <Trash2 /> 删除所选
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" disabled={busy || !visible.length} onClick={() => testMany(visible)}>
+                {batch ? <Spinner /> : <FlaskConical />}
+                {batch ? `测试中 ${batch.done}/${batch.total}` : "全部测试"}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="divide-y">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+                <Skeleton className="size-4" />
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 flex-1" />
               </div>
             ))}
           </div>
-
-          {missingItems.length > 0 && (
-            <Alert className="border-amber-500/30 bg-amber-500/10">
-              <AlertDescription className="flex w-full flex-wrap items-center justify-between gap-2 text-amber-400">
-                <span className="flex min-w-0 items-center gap-2">
-                  <TriangleAlert className="size-4 shrink-0" />
-                  <span className="min-w-0">
-                    {missingItems.length} 个代理在 sub2api 中已删除或停用：
-                    {missingItems.slice(0, 3).map((p) => p.name).join("、")}
-                    {missingItems.length > 3 ? " 等" : ""}
-                  </span>
-                </span>
-                <span className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setMissing(new Set())}>忽略</Button>
-                  <Button variant="outline" size="sm" className="text-red-400 hover:text-red-300"
-                    onClick={() => askDelete(missingItems)}>
-                    <Trash2 /> 删除这些
-                  </Button>
-                </span>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {items.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-48 flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="pl-8" placeholder="搜索名称、主机、地区、出口 IP…" value={query}
-                  onChange={(e) => setQuery(e.target.value)} />
-              </div>
-              <div className="flex rounded-md border p-0.5">
-                {tabs.map(([key, label, n]) => (
-                  <button key={key} type="button"
-                    className={cn("rounded px-2.5 py-1 text-xs transition-colors",
-                      filter === key ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
-                    onClick={() => setFilter(key)}>
-                    {label}<span className="ml-1 opacity-60">{n}</span>
-                  </button>
-                ))}
-              </div>
-              {selectedVisible.length > 0 ? (
-                <>
-                  <Button variant="outline" size="sm" disabled={busy} onClick={() => testMany(selectedVisible)}>
-                    <FlaskConical /> 测试所选（{selectedVisible.length}）
-                  </Button>
-                  <Button variant="outline" size="sm" className="text-red-400 hover:text-red-300"
-                    disabled={busy} onClick={() => askDelete(selectedVisible)}>
-                    <Trash2 /> 删除所选
-                  </Button>
-                </>
-              ) : (
-                <Button variant="outline" size="sm" disabled={busy || !visible.length}
-                  onClick={() => testMany(visible)}>
-                  {batch ? <Loader2 className="animate-spin" /> : <FlaskConical />}
-                  {batch ? `测试中 ${batch.done}/${batch.total}` : "全部测试"}
-                </Button>
-              )}
+        ) : items.length === 0 ? (
+          <Empty className="py-14">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><Globe /></EmptyMedia>
+              <EmptyTitle>代理池还是空的</EmptyTitle>
+              <EmptyDescription>手动添加代理，或一键导入 sub2api 中已有的代理。</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent className="flex-row justify-center">
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Download /> 从 sub2api 导入
+              </Button>
+              <Button onClick={() => setEdit({ open: true, entry: null })}>
+                <Plus /> 添加代理
+              </Button>
+            </EmptyContent>
+          </Empty>
+        ) : visible.length === 0 ? (
+          <Empty className="py-14">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><SearchX /></EmptyMedia>
+              <EmptyTitle>没有符合条件的代理</EmptyTitle>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button variant="outline" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选</Button>
+            </EmptyContent>
+          </Empty>
+        ) : (
+          <>
+            <div className={cn(ROW_GRID, "h-10 border-b bg-muted/30 px-4 text-xs font-medium text-muted-foreground max-md:hidden")}>
+              <Checkbox aria-label="全选"
+                checked={allSelected ? true : selectedVisible.length > 0 ? "indeterminate" : false}
+                disabled={busy} onCheckedChange={toggleAll} />
+              <span>名称</span>
+              <span>地址</span>
+              <span>出口</span>
+              <span className="text-right">操作</span>
             </div>
-          )}
-
-          {loading ? (
-            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> 加载中…
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
-              <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Globe className="size-5" />
-              </span>
-              <div>
-                <p className="font-medium">代理池还是空的</p>
-                <p className="mt-1 text-sm text-muted-foreground">手动添加代理，或一键导入 sub2api 中已有的代理。</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-                  <Download /> 从 sub2api 导入
-                </Button>
-                <Button size="sm" onClick={() => setEdit({ open: true, entry: null })}>
-                  <Plus /> 添加代理
-                </Button>
-              </div>
-            </div>
-          ) : visible.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">没有符合条件的代理</div>
-          ) : (
-            <div className="overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1.25rem_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_6.5rem] items-center gap-3 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground max-md:hidden">
-                <input type="checkbox" className="size-4 accent-primary" aria-label="全选"
-                  checked={allSelected} disabled={busy} onChange={toggleAll} />
-                <span>名称</span>
-                <span>地址</span>
-                <span>出口</span>
-                <span className="text-right">操作</span>
-              </div>
-              <ul className="divide-y">
-                {visible.map((p) => {
-                  const parsed = parseProxyUrl(p.url);
-                  const result = valid[p.id];
-                  const isTesting = testing.has(p.id);
-                  return (
-                    <li key={p.id}
-                      className={cn(
-                        "grid grid-cols-[1.25rem_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_6.5rem] items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-accent/30",
-                        "max-md:grid-cols-[1.25rem_minmax(0,1fr)_auto] max-md:gap-y-1.5",
-                        selected.has(p.id) && "bg-primary/5",
-                        missing.has(p.id) && "bg-amber-500/5",
-                      )}>
-                      <input type="checkbox" className="size-4 accent-primary max-md:row-span-3 max-md:self-start max-md:mt-0.5"
-                        aria-label={`选择 ${p.name}`} checked={selected.has(p.id)} disabled={busy}
-                        onChange={() => toggle(p.id)} />
-                      <span className="min-w-0">
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate font-medium" title={p.name}>{p.name}</span>
-                          <SourceBadge entry={p} currentBase={sub2apiBase} />
-                          {usage[p.id] ? (
-                            <Badge variant="outline" className="shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground"
-                              title="绑定该代理的账号数；仍被使用时不能删除">
-                              {usage[p.id]} 个账号
-                            </Badge>
-                          ) : null}
-                          {missing.has(p.id) && (
-                            <Badge className="rounded-full border-transparent bg-amber-500/15 px-1.5 text-[10px] text-amber-400">
-                              上游已移除
-                            </Badge>
-                          )}
-                        </span>
-                        {p.location ? (
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{p.location}</span>
+            <ul className="divide-y">
+              {visible.map((p, i) => {
+                const parsed = parseProxyUrl(p.url);
+                const result = valid[p.id];
+                const isTesting = testing.has(p.id);
+                return (
+                  <m.li
+                    key={p.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.015 }}
+                    className={cn(
+                      ROW_GRID,
+                      "px-4 py-3 text-sm transition-colors hover:bg-muted/40",
+                      "max-md:grid-cols-[1rem_minmax(0,1fr)_auto] max-md:gap-x-3 max-md:gap-y-1.5",
+                      selected.has(p.id) && "bg-primary/5",
+                      missing.has(p.id) && "bg-warning/6",
+                    )}>
+                    <Checkbox className="max-md:row-span-3 max-md:mt-0.5 max-md:self-start"
+                      aria-label={`选择 ${p.name}`} checked={selected.has(p.id)} disabled={busy}
+                      onCheckedChange={() => toggle(p.id)} />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate font-medium" title={p.name}>{p.name}</span>
+                        <SourceBadge entry={p} currentBase={sub2apiBase} />
+                        {usage[p.id] ? (
+                          <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground"
+                            title="绑定该代理的账号数；仍被使用时不能删除">
+                            <Users /> {usage[p.id]}
+                          </Badge>
                         ) : null}
+                        {missing.has(p.id) && <Pill tone="warning">上游已移除</Pill>}
                       </span>
-                      <span className="flex min-w-0 items-center gap-1.5 max-md:col-start-2 max-md:row-start-2">
-                        <Badge variant="outline" className="shrink-0 rounded px-1.5 font-mono text-[10px]">
-                          {protocolLabel(parsed?.scheme)}
-                        </Badge>
-                        <code className="truncate text-xs text-muted-foreground" title={maskProxyUrl(p.url)}>
-                          {parsed ? parsed.address : maskProxyUrl(p.url)}
-                        </code>
-                        {parsed?.hasAuth && (
-                          <span className="shrink-0 text-muted-foreground" title="带认证">
-                            <KeyRound className="size-3" />
-                          </span>
-                        )}
-                      </span>
-                      <span className="min-w-0 text-xs max-md:col-start-2 max-md:row-start-3">
-                        {isTesting ? (
-                          <span className="flex items-center gap-1.5 text-muted-foreground">
-                            <Loader2 className="size-3.5 animate-spin" /> 测试中…
-                          </span>
-                        ) : result ? (
-                          <ProbeResult result={result} compact />
-                        ) : (
-                          <span className="text-muted-foreground/70">未测试</span>
-                        )}
-                      </span>
-                      <span className="flex justify-end gap-0.5 max-md:col-start-3 max-md:row-start-1">
-                        <Button variant="ghost" size="icon-sm" title="测试出口" aria-label={`测试 ${p.name}`}
-                          disabled={isTesting || busy} onClick={() => testOne(p)}>
-                          <FlaskConical />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" title="编辑" aria-label={`编辑 ${p.name}`}
-                          disabled={busy} onClick={() => setEdit({ open: true, entry: p })}>
-                          <Pencil />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" title="删除" aria-label={`删除 ${p.name}`}
-                          className="text-red-400 hover:text-red-300" disabled={busy}
-                          onClick={() => askDelete([p])}>
-                          <Trash2 />
-                        </Button>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </CardContent>
+                      {p.location ? (
+                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{p.location}</span>
+                      ) : null}
+                    </span>
+                    <span className="flex min-w-0 items-center gap-1.5 max-md:col-start-2 max-md:row-start-2">
+                      <Badge variant="secondary" className="shrink-0 rounded-md font-mono text-[10px]">
+                        {protocolLabel(parsed?.scheme)}
+                      </Badge>
+                      <code className="truncate text-xs text-muted-foreground" title={maskProxyUrl(p.url)}>
+                        {parsed ? parsed.address : maskProxyUrl(p.url)}
+                      </code>
+                      {parsed?.hasAuth && (
+                        <span className="shrink-0 text-muted-foreground" title="带认证">
+                          <KeyRound className="size-3" />
+                        </span>
+                      )}
+                    </span>
+                    <span className="min-w-0 text-xs max-md:col-start-2 max-md:row-start-3">
+                      {isTesting ? (
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          <Spinner className="size-3.5" /> 测试中…
+                        </span>
+                      ) : result ? (
+                        <ProbeResult result={result} compact />
+                      ) : (
+                        <span className="text-muted-foreground/70">未测试</span>
+                      )}
+                    </span>
+                    <span className="flex justify-end gap-0.5 max-md:col-start-3 max-md:row-start-1">
+                      <TipButton variant="ghost" size="icon-sm" tip="测试出口"
+                        disabled={isTesting || busy} onClick={() => testOne(p)}>
+                        <FlaskConical />
+                      </TipButton>
+                      <TipButton variant="ghost" size="icon-sm" tip="编辑"
+                        disabled={busy} onClick={() => setEdit({ open: true, entry: p })}>
+                        <Pencil />
+                      </TipButton>
+                      <TipButton variant="ghost" size="icon-sm" tip="删除"
+                        className="text-destructive hover:text-destructive" disabled={busy}
+                        onClick={() => askDelete([p])}>
+                        <Trash2 />
+                      </TipButton>
+                    </span>
+                  </m.li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </Card>
 
       <ProxyEditDialog
@@ -508,20 +537,23 @@ export default function Proxies({ navigate }) {
         navigate={navigate}
       />
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent size="sm">
           <AlertDialogHeader>
+            <AlertDialogMedia className="bg-destructive/10 text-destructive">
+              <Trash2 />
+            </AlertDialogMedia>
             <AlertDialogTitle>{confirm?.title}</AlertDialogTitle>
             <AlertDialogDescription>{confirm?.description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <Button className="bg-destructive text-white hover:bg-destructive/90"
+            <Button variant="destructive"
               onClick={async () => { const fn = confirm?.onConfirm; setConfirm(null); await fn?.(); }}>
               删除
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

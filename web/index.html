@@ -3,7 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>account-manager 管理面板</title>
+    <meta name="color-scheme" content="dark light" />
+    <title>Account Manager 管理面板</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // 首屏前按已保存的主题（默认深色）设置 class，避免刷新时闪白；键名与 next-themes 的 storageKey 一致
+      (function () {
+        try {
+          var t = localStorage.getItem("am-theme") || "dark";
+          var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,6 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 export function initialImportSettings() {
   return { namePrefix: "", concurrency: "", priority: "", rate: "1", notes: "", proxyId: "", groupIds: [],
@@ -62,8 +65,8 @@ export function buildImportSettings(form, names) {
 export function OAuthImportSettings({ value, onChange, options, loading, error, onReload, disabled }) {
   const set = (key, next) => onChange((previous) => ({ ...previous, [key]: next }));
   return (
-    <fieldset disabled={disabled} className="min-w-0 space-y-3 rounded-md border p-3">
-      <legend className="px-1 font-medium">账号创建参数（应用到本批全部账号）</legend>
+    <fieldset disabled={disabled} className="min-w-0 space-y-3 rounded-lg border p-3.5 disabled:opacity-70">
+      <legend className="px-1.5 font-medium">账号创建参数（应用到本批全部账号）</legend>
       <div className="space-y-1.5">
         <Label htmlFor="oauth-name-prefix">账号名称前缀</Label>
         <Input id="oauth-name-prefix" maxLength={100} value={value.namePrefix} placeholder="可选，例如 batch-"
@@ -106,22 +109,24 @@ export function OAuthImportSettings({ value, onChange, options, loading, error, 
           {loading ? "加载中…" : "刷新代理和分组"}
         </Button>
       </div>
-      {error && <p role="alert" className="text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-destructive">{error}</p>}
       <div className="space-y-1.5">
         <Label htmlFor="oauth-proxy">代理</Label>
-        <select id="oauth-proxy" className="h-9 w-full rounded-md border bg-background px-2"
+        <NativeSelect id="oauth-proxy" className="w-full"
           value={value.proxyId} disabled={loading || !options} onChange={(e) => set("proxyId", e.target.value)}>
-          <option value="">直连（不使用代理）</option>
-          {options?.proxies.map((proxy) => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}
-        </select>
+          <NativeSelectOption value="">直连（不使用代理）</NativeSelectOption>
+          {options?.proxies.map((proxy) => (
+            <NativeSelectOption key={proxy.id} value={proxy.id}>{proxy.name}</NativeSelectOption>
+          ))}
+        </NativeSelect>
       </div>
       <div className="space-y-1.5">
         <span className="font-medium">分组（可多选）</span>
-        <div className="flex max-h-28 flex-wrap gap-x-4 gap-y-2 overflow-auto rounded-md border p-2">
+        <div className="flex max-h-28 flex-wrap gap-x-4 gap-y-2 overflow-auto rounded-lg border p-2.5">
           {options?.groups.map((group) => (
-            <label key={group.id} className="flex items-center gap-2">
-              <input type="checkbox" className="size-4 accent-primary" checked={value.groupIds.includes(group.id)}
-                disabled={loading} onChange={(e) => set("groupIds", e.target.checked
+            <label key={group.id} className="flex cursor-pointer items-center gap-2.5">
+              <Checkbox checked={value.groupIds.includes(group.id)}
+                disabled={loading || disabled} onCheckedChange={(checked) => set("groupIds", checked === true
                   ? [...value.groupIds, group.id] : value.groupIds.filter((id) => id !== group.id))} />
               {group.name}
             </label>
@@ -138,24 +143,24 @@ export function OAuthImportSettings({ value, onChange, options, loading, error, 
             onChange={(e) => set("expiresAt", e.target.value)} />
           <p className="text-xs text-muted-foreground">留空表示不设置账号到期时间，使用浏览器本地时区。此项独立于 OAuth 令牌过期时间。</p>
         </div>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" className="size-4 accent-primary" checked={value.autoPause}
-            onChange={(e) => set("autoPause", e.target.checked)} />到期自动暂停
+        <label className="flex cursor-pointer items-center gap-2.5">
+          <Checkbox checked={value.autoPause} disabled={disabled}
+            onCheckedChange={(checked) => set("autoPause", checked === true)} />到期自动暂停
         </label>
         <div className="space-y-1.5">
           <Label htmlFor="oauth-model-mode">模型限制</Label>
-          <select id="oauth-model-mode" className="h-9 w-full rounded-md border bg-background px-2"
+          <NativeSelect id="oauth-model-mode" className="w-full"
             value={value.modelMode} onChange={(e) => set("modelMode", e.target.value)}>
-            <option value="keep">沿用文件中的模型设置</option>
-            <option value="all">允许所有模型</option>
-            <option value="whitelist">模型白名单</option>
-            <option value="mapping">模型映射</option>
-          </select>
+            <NativeSelectOption value="keep">沿用文件中的模型设置</NativeSelectOption>
+            <NativeSelectOption value="all">允许所有模型</NativeSelectOption>
+            <NativeSelectOption value="whitelist">模型白名单</NativeSelectOption>
+            <NativeSelectOption value="mapping">模型映射</NativeSelectOption>
+          </NativeSelect>
         </div>
         {["whitelist", "mapping"].includes(value.modelMode) && (
           <div className="space-y-1.5">
             <Label htmlFor="oauth-model-text">{value.modelMode === "whitelist" ? "模型名称（每行一个）" : "模型映射（每行一条）"}</Label>
-            <textarea id="oauth-model-text" className="h-24 w-full rounded-md border bg-background p-2 font-mono text-xs"
+            <Textarea id="oauth-model-text" className="field-sizing-fixed h-24 font-mono text-xs md:text-xs"
               value={value.modelText} onChange={(e) => set("modelText", e.target.value)} spellCheck={false}
               placeholder={value.modelMode === "whitelist" ? "claude-sonnet-4-5-20250929" : "claude-sonnet-* = claude-sonnet-4-5-20250929"} />
           </div>

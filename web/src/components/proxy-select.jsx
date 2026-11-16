@@ -1,4 +1,5 @@
 import { maskProxyUrl, parseProxyUrl } from "@/lib/proxy";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 // 账号原代理不在代理池时（旧数据里无法迁移的地址）的占位值：保存时不提交 proxy_id。
 export const KEEP_PROXY = "__keep__";
@@ -15,21 +16,23 @@ export function proxyOptionLabel(p) {
 export function ProxySelect({ id, value, onChange, proxies, disabled, legacyUrl = "" }) {
   const known = !value || value === KEEP_PROXY || proxies.some((p) => p.id === value);
   return (
-    <select
+    <NativeSelect
       id={id}
-      className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+      className="w-full min-w-0"
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">不使用代理（直连）</option>
+      <NativeSelectOption value="">不使用代理（直连）</NativeSelectOption>
       {value === KEEP_PROXY && (
-        <option value={KEEP_PROXY}>保持原代理（不在代理池：{maskProxyUrl(legacyUrl)}）</option>
+        <NativeSelectOption value={KEEP_PROXY}>
+          保持原代理（不在代理池：{maskProxyUrl(legacyUrl)}）
+        </NativeSelectOption>
       )}
-      {!known && <option value={value}>已不在代理池的代理（{value}）</option>}
+      {!known && <NativeSelectOption value={value}>已不在代理池的代理（{value}）</NativeSelectOption>}
       {proxies.map((p) => (
-        <option key={p.id} value={p.id}>{proxyOptionLabel(p)}</option>
+        <NativeSelectOption key={p.id} value={p.id}>{proxyOptionLabel(p)}</NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

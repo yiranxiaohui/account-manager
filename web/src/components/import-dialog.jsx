@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { api } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -17,10 +22,10 @@ import {
 const STORAGE_KEY = "cr:import-options";
 
 const RESULT_LABEL = {
-  created: ["新增", "text-emerald-400"],
-  updated: ["已更新", "text-blue-400"],
-  skipped: ["跳过（失效）", "text-amber-400"],
-  invalid: ["无法识别", "text-red-400"],
+  created: ["新增", "text-success"],
+  updated: ["已更新", "text-info"],
+  skipped: ["跳过（失效）", "text-warning"],
+  invalid: ["无法识别", "text-destructive"],
   duplicate: ["重复", "text-muted-foreground"],
 };
 
@@ -88,17 +93,21 @@ export function ImportDialog({ open, onOpenChange, onImported }) {
 
   return (
     <AlertDialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <AlertDialogContent className="max-w-2xl">
+      <AlertDialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <AlertDialogHeader>
-          <AlertDialogTitle>导入 sessionKey</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Upload className="size-4 text-primary" /> 导入 sessionKey
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            每行一个账号：<code>sk-ant-…</code>，或 <code>邮箱----sk-ant-…</code>（分隔符不限）。
+            每行一个账号：<code className="rounded bg-muted px-1">sk-ant-…</code>，或{" "}
+            <code className="rounded bg-muted px-1">邮箱----sk-ant-…</code>（分隔符不限）。
             只有 sk 时会在检测时向 claude.ai 查询邮箱。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-4 text-sm">
-          <textarea
-            className="h-40 w-full resize-y rounded-md border bg-background p-2 font-mono text-xs"
+          <Textarea
+            aria-label="要导入的 sessionKey"
+            className="field-sizing-fixed h-40 resize-y font-mono text-xs md:text-xs"
             placeholder={"sk-ant-sid01-xxxx\nuser@example.com----sk-ant-sid01-yyyy"}
             spellCheck={false}
             value={text}
@@ -107,35 +116,34 @@ export function ImportDialog({ open, onOpenChange, onImported }) {
           />
           <div className="space-y-1.5">
             <Label htmlFor="import-proxy">代理</Label>
-            <select
+            <NativeSelect
               id="import-proxy"
-              className="h-9 w-full rounded-md border bg-background px-2"
+              className="w-full"
               value={proxyId}
               disabled={busy}
               onChange={(e) => setProxyId(e.target.value)}
             >
-              <option value="">不使用代理（直连检测，账号不绑定代理）</option>
-              {proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+              <NativeSelectOption value="">不使用代理（直连检测，账号不绑定代理）</NativeSelectOption>
+              {proxies.map((p) => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
+            </NativeSelect>
             <p className="text-xs text-muted-foreground">
               所选代理会用于检测，并写入账号的代理字段（之后检测 / 接管都走它）。在
-              <a className="underline" href="#/proxies">代理池</a>中管理代理。
+              <a className="text-primary underline-offset-4 hover:underline" href="#/proxies">代理池</a>中管理代理。
             </p>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input type="checkbox" className="size-4 accent-primary" checked={check}
-                disabled={busy} onChange={(e) => setCheck(e.target.checked)} />
+            <label className="flex cursor-pointer items-center gap-2.5">
+              <Checkbox checked={check} disabled={busy} onCheckedChange={(v) => setCheck(v === true)} />
               导入前检测有效性并查询邮箱
             </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input type="checkbox" className="size-4 accent-primary" checked={skipDead}
-                disabled={busy || !check} onChange={(e) => setSkipDead(e.target.checked)} />
+            <label className={cn("flex cursor-pointer items-center gap-2.5", (busy || !check) && "opacity-50")}>
+              <Checkbox checked={skipDead} disabled={busy || !check}
+                onCheckedChange={(v) => setSkipDead(v === true)} />
               跳过已失效的 sk
             </label>
           </div>
           {report && (
-            <div className="max-h-48 overflow-auto rounded-md border bg-background/50 p-2 text-xs">
+            <div className="max-h-48 overflow-auto rounded-lg bg-muted/40 p-2.5 text-xs ring-1 ring-foreground/10">
               {report.results.map((r) => {
                 const [label, cls] = RESULT_LABEL[r.result] || [r.result, ""];
                 return (
@@ -155,7 +163,7 @@ export function ImportDialog({ open, onOpenChange, onImported }) {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>关闭</AlertDialogCancel>
           <Button onClick={doImport} disabled={busy}>
-            <Upload /> {busy ? (check ? "检测并导入中…" : "导入中…") : "导入"}
+            {busy ? <Spinner /> : <Upload />} {busy ? (check ? "检测并导入中…" : "导入中…") : "导入"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

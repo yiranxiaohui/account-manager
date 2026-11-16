@@ -7,7 +7,7 @@ export function ProbeResult({ result, compact = false, className }) {
   if (!result) return null;
   if (!result.ok) {
     return (
-      <span className={cn("flex min-w-0 items-center gap-1.5 text-red-400", className)}
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-destructive", className)}
         title={result.error || "连接失败"}>
         <CircleAlert className="size-3.5 shrink-0" />
         <span className="truncate">{compact ? "不可用" : `不可用：${result.error || "连接失败"}`}</span>
@@ -27,7 +27,7 @@ export function ProbeResult({ result, compact = false, className }) {
   ].filter(Boolean).join("\n");
   return (
     <span className={cn("flex min-w-0 items-center gap-1.5", className)} title={tip}>
-      <CircleCheck className="size-3.5 shrink-0 text-emerald-400" />
+      <CircleCheck className="size-3.5 shrink-0 text-success" />
       {flagEmoji(result.country_code) && <span className="shrink-0">{flagEmoji(result.country_code)}</span>}
       <span className="truncate">
         {place || result.country_code || "未知地区"}

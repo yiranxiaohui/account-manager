@@ -5,6 +5,8 @@ import { api } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -74,9 +76,11 @@ export function ManualLoginDialog({ open, onOpenChange, onStarted }) {
 
   return (
     <AlertDialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>手动登录</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <LogIn className="size-4 text-primary" /> 手动登录
+          </AlertDialogTitle>
           <AlertDialogDescription>
             打开一个未登录的 claude.ai 浏览器，你在接管画面里自己登录任意邮箱（收码、过验证都手动完成）。
             登录成功后系统会自动取出 sessionKey 并新建账号；如果该邮箱已存在，则更新它的 sessionKey。
@@ -101,16 +105,16 @@ export function ManualLoginDialog({ open, onOpenChange, onStarted }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="manual-proxy">代理</Label>
-            <select
+            <NativeSelect
               id="manual-proxy"
-              className="h-9 w-full rounded-md border bg-background px-2"
+              className="w-full"
               value={proxyId}
               disabled={busy}
               onChange={(e) => setProxyId(e.target.value)}
             >
-              <option value="">不使用代理（直连，账号不绑定代理）</option>
-              {proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+              <NativeSelectOption value="">不使用代理（直连，账号不绑定代理）</NativeSelectOption>
+              {proxies.map((p) => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
+            </NativeSelect>
             <p className="text-xs text-muted-foreground">
               浏览器经所选代理登录，取出的 sk 也会绑定该代理（之后检测 / 接管都走它）。
             </p>
@@ -119,7 +123,7 @@ export function ManualLoginDialog({ open, onOpenChange, onStarted }) {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
           <Button onClick={doStart} disabled={busy}>
-            <LogIn /> {busy ? "正在启动浏览器…" : "开始"}
+            {busy ? <Spinner /> : <LogIn />} {busy ? "正在启动浏览器…" : "开始"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

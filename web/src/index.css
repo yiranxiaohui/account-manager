@@ -1,73 +1,161 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ===== shadcn/ui radix-nova 所需的自定义 variant（摘自 shadcn/tailwind.css，
+   避免为一个 CSS 文件把 shadcn CLI 整个装进依赖） ===== */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ===== 主题：冷调中性色 + 靛紫品牌色；success/warning/info/highlight 为语义色，
+   浅色、深色主题各自调过对比度，组件里统一用 text-success、bg-success/12 等 ===== */
 :root {
+  color-scheme: light;
   --radius: 0.625rem;
-  --background: oklch(0.975 0.012 255);
-  --foreground: oklch(0.141 0.005 285.823);
+  --background: oklch(0.99 0.002 275);
+  --foreground: oklch(0.2 0.015 275);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
+  --card-foreground: oklch(0.2 0.015 275);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.48 0.19 263);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --sidebar: hsl(224 34% 12%);
-  --sidebar-foreground: hsl(220 20% 92%);
-  --sidebar-primary: hsl(204 94% 58%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(223 28% 20%);
-  --sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --popover-foreground: oklch(0.2 0.015 275);
+  --primary: oklch(0.53 0.21 278);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.006 275);
+  --secondary-foreground: oklch(0.25 0.02 275);
+  --muted: oklch(0.965 0.005 275);
+  --muted-foreground: oklch(0.5 0.02 275);
+  --accent: oklch(0.955 0.012 278);
+  --accent-foreground: oklch(0.25 0.03 278);
+  --destructive: oklch(0.577 0.235 27.3);
+  --success: oklch(0.55 0.14 158);
+  --warning: oklch(0.6 0.15 62);
+  --info: oklch(0.55 0.16 245);
+  --highlight: oklch(0.54 0.2 300);
+  --border: oklch(0.92 0.006 275);
+  --input: oklch(0.9 0.008 275);
+  --ring: oklch(0.6 0.19 278);
+  --sidebar: oklch(0.965 0.005 275);
+  --sidebar-foreground: oklch(0.32 0.02 275);
+  --sidebar-primary: oklch(0.53 0.21 278);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.925 0.014 278);
+  --sidebar-accent-foreground: oklch(0.2 0.03 278);
+  --sidebar-border: oklch(0.91 0.006 275);
+  --sidebar-ring: oklch(0.6 0.19 278);
+  --terminal: oklch(0.18 0.01 275);
+  --terminal-foreground: oklch(0.86 0.01 275);
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
-  --sidebar: hsl(240 5.9% 10%);
-  --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(240 3.7% 15.9%);
-  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  color-scheme: dark;
+  --background: oklch(0.165 0.008 275);
+  --foreground: oklch(0.97 0.004 275);
+  --card: oklch(0.195 0.009 275);
+  --card-foreground: oklch(0.97 0.004 275);
+  --popover: oklch(0.215 0.01 275);
+  --popover-foreground: oklch(0.97 0.004 275);
+  --primary: oklch(0.63 0.19 278);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.26 0.012 275);
+  --secondary-foreground: oklch(0.97 0.004 275);
+  --muted: oklch(0.24 0.01 275);
+  --muted-foreground: oklch(0.7 0.015 275);
+  --accent: oklch(0.27 0.02 278);
+  --accent-foreground: oklch(0.97 0.004 275);
+  --destructive: oklch(0.69 0.19 22);
+  --success: oklch(0.76 0.15 160);
+  --warning: oklch(0.8 0.15 75);
+  --info: oklch(0.74 0.13 235);
+  --highlight: oklch(0.74 0.15 300);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.63 0.19 278);
+  --sidebar: oklch(0.13 0.007 275);
+  --sidebar-foreground: oklch(0.82 0.01 275);
+  --sidebar-primary: oklch(0.63 0.19 278);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.215 0.012 278);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-ring: oklch(0.63 0.19 278);
+  --terminal: oklch(0.13 0.007 275);
+  --terminal-foreground: oklch(0.84 0.01 275);
 }
 
 @theme inline {
+  --font-sans: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", system-ui,
+    sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --font-heading: var(--font-sans);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -83,9 +171,15 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-highlight: var(--highlight);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-terminal: var(--terminal);
+  --color-terminal-foreground: var(--terminal-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -100,30 +194,59 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply font-sans;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+    scrollbar-width: thin;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
   body {
-    @apply bg-background text-foreground;
-    font-family: "DM Sans", system-ui, sans-serif;
-    background-image: radial-gradient(circle at 10% 0%, color-mix(in oklab, var(--primary) 7%, transparent), transparent 32rem);
+    @apply bg-sidebar text-foreground;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 30%, transparent);
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
   }
 }
 
-.app-shell { background: radial-gradient(circle at 50% -10%, oklch(1 0 0 / .8), transparent 34rem); }
-.brand { font-family: "Space Grotesk", sans-serif; letter-spacing: -.02em; color: #f4f7ff; }
-.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 9px; color: white; background: linear-gradient(135deg, #42b8ff, #6757f5); box-shadow: 0 5px 18px #3a7cff55; }
-.brand-subtitle { display: block; margin: 7px 0 0 36px; color: #95a5c2; font: 500 10px "DM Sans", sans-serif; letter-spacing: .08em; }
-.app-content > * { animation: rise-in .28s ease-out both; }
-.loading-mark { display: flex; gap: .5rem; align-items: center; color: var(--muted-foreground); font-size: .9rem; }
-.loading-mark svg { color: var(--primary); animation: pulse 1.5s infinite; }
-.card { box-shadow: 0 12px 35px oklch(.2 .03 260 / .06); }
-@keyframes rise-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
-
 /* ===== 项目自定义（shadcn 覆盖不到的） ===== */
+
+/* 品牌渐变：Logo、登录页装饰 */
+.brand-gradient {
+  background-image: linear-gradient(135deg, oklch(0.74 0.15 230), oklch(0.56 0.23 285));
+}
+
+/* 页面顶部的柔光 */
+.page-glow {
+  background:
+    radial-gradient(60rem 18rem at 15% -6rem, color-mix(in oklab, var(--primary) 9%, transparent), transparent 70%),
+    radial-gradient(40rem 14rem at 85% -6rem, color-mix(in oklab, var(--info) 7%, transparent), transparent 70%);
+}
+
+/* 登录页网格背景 */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--foreground) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 6%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+}
+
+/* 终端风格日志面板：浅色/深色主题下都是深底 */
 .log-panel {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  @apply font-mono;
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-all;
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: oklch(1 0 0 / 15%) transparent;
 }

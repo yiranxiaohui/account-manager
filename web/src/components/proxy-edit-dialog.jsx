@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, FlaskConical, Loader2 } from "lucide-react";
+import { Eye, EyeOff, FlaskConical, Globe, Loader2 } from "lucide-react";
 import { api } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -64,10 +71,12 @@ export function ProxyEditDialog({ open, entry, onOpenChange, onSave }) {
   const fromSub2api = entry?.source === "sub2api";
   return (
     <AlertDialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
-      <AlertDialogContent>
+      <AlertDialogContent className="sm:max-w-lg">
         <form onSubmit={save} className="grid gap-4">
           <AlertDialogHeader>
-            <AlertDialogTitle>{entry ? "编辑代理" : "添加代理"}</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Globe className="size-4 text-primary" /> {entry ? "编辑代理" : "添加代理"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               支持 HTTP(S) 与 SOCKS5 代理，带认证的 SOCKS5 会自动经本地中继供浏览器使用。
             </AlertDialogDescription>
@@ -79,10 +88,10 @@ export function ProxyEditDialog({ open, entry, onOpenChange, onSave }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="proxy-url">地址</Label>
-            <div className="relative">
-              <Input
+            <InputGroup>
+              <InputGroupInput
                 id="proxy-url"
-                className="pr-9 font-mono text-xs"
+                className="font-mono text-xs md:text-xs"
                 type={showUrl ? "text" : "password"}
                 placeholder="socks5://user:pass@host:port 或 http://host:port"
                 value={form.url}
@@ -90,23 +99,24 @@ export function ProxyEditDialog({ open, entry, onOpenChange, onSave }) {
                 spellCheck={false}
                 onChange={(e) => { set("url")(e); setProbe(null); }}
               />
-              <button
-                type="button"
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label={showUrl ? "隐藏地址" : "显示地址"}
-                onClick={() => setShowUrl((v) => !v)}
-              >
-                {showUrl ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-xs"
+                  aria-label={showUrl ? "隐藏地址" : "显示地址"}
+                  onClick={() => setShowUrl((v) => !v)}
+                >
+                  {showUrl ? <EyeOff /> : <Eye />}
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
             {fromSub2api && (
-              <p className="text-xs text-amber-400/90">
+              <p className="text-xs text-warning">
                 此代理导入自 sub2api（#{entry.source_id}），「同步 sub2api」时地址会按 sub2api 更新，名称保持不变。
               </p>
             )}
           </div>
-          <div className="flex min-h-9 items-center gap-3 rounded-md border border-dashed px-3 py-2 text-xs">
-            <Button type="button" variant="outline" size="xs" onClick={test} disabled={testing}>
+          <div className="flex min-h-11 items-center gap-3 rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-xs">
+            <Button type="button" variant="outline" size="sm" onClick={test} disabled={testing}>
               {testing ? <Loader2 className="animate-spin" /> : <FlaskConical />} 测试连接
             </Button>
             {probe ? <ProbeResult result={probe} /> : (
@@ -117,7 +127,10 @@ export function ProxyEditDialog({ open, entry, onOpenChange, onSave }) {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel type="button" disabled={saving}>取消</AlertDialogCancel>
-            <Button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
+            <Button type="submit" disabled={saving}>
+              {saving && <Spinner />}
+              {saving ? "保存中…" : "保存"}
+            </Button>
           </AlertDialogFooter>
         </form>
       </AlertDialogContent>

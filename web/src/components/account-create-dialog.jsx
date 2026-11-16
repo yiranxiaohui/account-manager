@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, UserPlus } from "lucide-react";
 import { api } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { KEEP_PROXY, ProxySelect } from "@/components/proxy-select";
 import {
   AlertDialog,
@@ -54,15 +55,12 @@ export function useSavedProxies(active = true) {
 
 export function AccountFields({ form, setForm, disabled, idPrefix, proxies, legacyProxy = "" }) {
   return (
-    <div className="grid grid-cols-2 gap-2.5">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {ACCOUNT_FIELDS.map(([key, label, hint, wide, mono]) => (
-        <div key={key} className={`flex min-w-0 flex-col gap-1 ${wide ? "col-span-2" : ""}`}>
-          <Label
-            htmlFor={`${idPrefix}-${key}`}
-            className="text-[11px] uppercase tracking-wide text-muted-foreground"
-          >
+        <div key={key} className={`flex min-w-0 flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+          <Label htmlFor={`${idPrefix}-${key}`} className="gap-1 text-xs text-muted-foreground">
             {label}
-            {key === "email" ? <span className="text-red-400">*</span> : null}
+            {key === "email" ? <span className="text-destructive">*</span> : null}
           </Label>
           {key === "proxy_id" ? (
             <>
@@ -74,8 +72,8 @@ export function AccountFields({ form, setForm, disabled, idPrefix, proxies, lega
                 disabled={disabled}
                 onChange={(v) => setForm((f) => ({ ...f, proxy_id: v }))}
               />
-              <span className="text-[11px] text-muted-foreground">
-                只能选择<a className="underline" href="#/proxies">代理池</a>中的代理；检测、接管、OAuth 都会走它。
+              <span className="text-xs text-muted-foreground">
+                只能选择<a className="text-primary underline-offset-4 hover:underline" href="#/proxies">代理池</a>中的代理；检测、接管、OAuth 都会走它。
               </span>
             </>
           ) : (
@@ -126,9 +124,11 @@ export function AccountCreateDialog({ open, onOpenChange, onCreated }) {
 
   return (
     <AlertDialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="sm:max-w-xl">
         <AlertDialogHeader>
-          <AlertDialogTitle>新增账号</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <UserPlus className="size-4 text-primary" /> 新增账号
+          </AlertDialogTitle>
           <AlertDialogDescription>
             手动录入一个已有账号。只有邮箱必填，其余字段可以之后再编辑。
           </AlertDialogDescription>
@@ -143,7 +143,7 @@ export function AccountCreateDialog({ open, onOpenChange, onCreated }) {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
           <Button onClick={doCreate} disabled={busy}>
-            <Plus /> {busy ? "保存中…" : "新增"}
+            {busy ? <Spinner /> : <Plus />} {busy ? "保存中…" : "新增"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

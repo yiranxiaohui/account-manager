@@ -45,9 +45,9 @@ export function flagEmoji(code) {
 
 export function latencyClass(ms) {
   if (ms == null) return "text-muted-foreground";
-  if (ms < 400) return "text-emerald-400";
-  if (ms < 1000) return "text-amber-400";
-  return "text-red-400";
+  if (ms < 400) return "text-success";
+  if (ms < 1000) return "text-warning";
+  return "text-destructive";
 }
 
 export function relTime(iso) {

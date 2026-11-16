@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { Download, Info } from "lucide-react";
 import { api } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -125,70 +129,81 @@ export function ExportDialog({ open, onOpenChange }) {
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>导出账号</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Download className="size-4 text-primary" /> 导出账号
+          </AlertDialogTitle>
           <AlertDialogDescription>选择要导出的信息和格式。</AlertDialogDescription>
         </AlertDialogHeader>
         {!meta ? (
-          <div className="text-sm text-muted-foreground">加载中…</div>
+          <div className="space-y-3">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </div>
         ) : (
           <div className="space-y-4 text-sm">
             {format === "sub2api" ? (
-              <div className="rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
-                生成 sub2api 的「导入数据」文件（Anthropic · OAuth 账号，含账号绑定的代理），
-                只包含已获取 OAuth 令牌的账号。导入后由 sub2api 自行刷新令牌；refresh_token
-                只能使用一次，同一份令牌不要同时导入多个系统。
+              <div className="flex gap-2.5 rounded-lg border border-info/25 bg-info/8 p-3 text-xs text-muted-foreground">
+                <Info className="mt-px size-4 shrink-0 text-info" />
+                <span>
+                  生成 sub2api 的「导入数据」文件（Anthropic · OAuth 账号，含账号绑定的代理），
+                  只包含已获取 OAuth 令牌的账号。导入后由 sub2api 自行刷新令牌；refresh_token
+                  只能使用一次，同一份令牌不要同时导入多个系统。
+                </span>
               </div>
             ) : (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>导出字段</Label>
-                <span className="flex gap-3 text-xs">
-                  <button type="button" className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setFields(meta.default_fields)}>默认</button>
-                  <button type="button" className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setFields(meta.fields.map((f) => f.key))}>全选</button>
+                <span className="flex gap-1">
+                  <Button type="button" variant="ghost" size="xs" onClick={() => setFields(meta.default_fields)}>
+                    默认
+                  </Button>
+                  <Button type="button" variant="ghost" size="xs"
+                    onClick={() => setFields(meta.fields.map((f) => f.key))}>
+                    全选
+                  </Button>
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <div className="grid grid-cols-2 gap-1 rounded-lg p-1.5 ring-1 ring-foreground/10">
                 {meta.fields.map((f) => (
-                  <label key={f.key} className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={fields.includes(f.key)}
-                      onChange={() => toggle(f.key)}
-                    />
-                    <span>{f.title}</span>
-                    {f.secret && <span className="text-xs text-amber-500">敏感</span>}
+                  <label
+                    key={f.key}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60"
+                  >
+                    <Checkbox checked={fields.includes(f.key)} onCheckedChange={() => toggle(f.key)} />
+                    <span className="truncate">{f.title}</span>
+                    {f.secret && (
+                      <span className="ml-auto shrink-0 rounded bg-warning/14 px-1 text-[10px] text-warning">敏感</span>
+                    )}
                   </label>
                 ))}
               </div>
             </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="export-format">格式</Label>
-                <select
+                <NativeSelect
                   id="export-format"
-                  className="h-9 w-full rounded-md border bg-background px-2"
+                  className="w-full"
                   value={format}
                   onChange={(e) => setFormat(e.target.value)}
                 >
-                  {FORMATS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                </select>
+                  {FORMATS.map(([k, label]) => <NativeSelectOption key={k} value={k}>{label}</NativeSelectOption>)}
+                </NativeSelect>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="export-scope">范围</Label>
-                <select
+                <NativeSelect
                   id="export-scope"
-                  className="h-9 w-full rounded-md border bg-background px-2"
+                  className="w-full"
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
                 >
-                  {SCOPES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                </select>
+                  {SCOPES.map(([k, label]) => <NativeSelectOption key={k} value={k}>{label}</NativeSelectOption>)}
+                </NativeSelect>
               </div>
             </div>
             {format === "line" && (
@@ -202,7 +217,7 @@ export function ExportDialog({ open, onOpenChange }) {
         <AlertDialogFooter>
           <AlertDialogCancel>取消</AlertDialogCancel>
           <Button onClick={doExport} disabled={!meta || busy}>
-            <Download /> {busy ? "导出中…" : "导出"}
+            {busy ? <Spinner /> : <Download />} {busy ? "导出中…" : "导出"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

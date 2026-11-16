@@ -1,13 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Download, KeyRound, Loader2, RefreshCw, Search, Users } from "lucide-react";
+import { CircleAlert, Download, KeyRound, RefreshCw, Search, TriangleAlert, Users } from "lucide-react";
 import { api } from "../api.js";
 import { cn } from "@/lib/utils";
 import { flagEmoji, latencyClass, protocolLabel } from "@/lib/proxy";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import { Callout } from "@/components/callout";
+import { Pill } from "@/components/pill";
+import { SegmentedTabs } from "@/components/segmented-tabs";
+import { TipButton } from "@/components/tip-button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -25,12 +34,12 @@ const FILTERS = [
 ];
 
 const RESULT = {
-  created: ["新增", "text-emerald-400"],
-  updated: ["已更新", "text-blue-400"],
+  created: ["新增", "text-success"],
+  updated: ["已更新", "text-info"],
   unchanged: ["无变化", "text-muted-foreground"],
-  skipped: ["跳过", "text-amber-400"],
-  failed: ["失败", "text-red-400"],
-  missing: ["不存在", "text-red-400"],
+  skipped: ["跳过", "text-warning"],
+  failed: ["失败", "text-destructive"],
+  missing: ["不存在", "text-destructive"],
 };
 
 // 可勾选：可导入，且（未导入 / 已导入但地址有更新），且不与手动条目重复
@@ -41,12 +50,12 @@ function selectable(p) {
 function stateBadge(p) {
   if (p.local) {
     return p.local.outdated
-      ? ["有更新", "bg-amber-500/15 text-amber-400", "sub2api 中的地址或凭据已变化，导入即可更新本地条目"]
-      : ["已导入", "bg-emerald-500/15 text-emerald-400", `本地条目：${p.local.name}`];
+      ? ["有更新", "warning", "sub2api 中的地址或凭据已变化，导入即可更新本地条目"]
+      : ["已导入", "success", `本地条目：${p.local.name}`];
   }
-  if (!p.importable) return [p.expired ? "已过期" : "不可导入", "bg-red-500/15 text-red-400", p.reason];
-  if (p.duplicate_of) return ["地址已存在", "bg-muted text-muted-foreground", `代理池已有相同地址：${p.duplicate_of}`];
-  return ["可导入", "bg-blue-500/15 text-blue-400", ""];
+  if (!p.importable) return [p.expired ? "已过期" : "不可导入", "danger", p.reason];
+  if (p.duplicate_of) return ["地址已存在", "muted", `代理池已有相同地址：${p.duplicate_of}`];
+  return ["可导入", "info", ""];
 }
 
 function matches(p, filter, q) {
@@ -141,68 +150,65 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
   const picked = proxies.filter((p) => selected.has(p.id) && selectable(p)).length;
   return (
     <AlertDialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <AlertDialogContent size="lg" className="flex max-h-[min(90vh,52rem)] flex-col sm:max-w-4xl">
+      <AlertDialogContent className="flex max-h-[min(90vh,52rem)] flex-col sm:max-w-4xl">
         <AlertDialogHeader className="place-items-start text-left">
           <AlertDialogTitle className="flex items-center gap-2">
-            <Download className="size-4" /> 从 sub2api 导入代理
+            <Download className="size-4 text-primary" /> 从 sub2api 导入代理
           </AlertDialogTitle>
           <AlertDialogDescription>
             读取 sub2api 中启用的代理，导入后可在注册任务、sessionKey 导入和手动登录里选择。
             代理密码只在服务端组装地址，不会经过浏览器。
-            {data?.base_url ? <span className="ml-1 font-mono text-xs">{data.base_url}</span> : null}
+            {data?.base_url ? (
+              <code className="ml-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">{data.base_url}</code>
+            ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
         {error && (
-          <Alert className="border-red-500/30 bg-red-500/10">
-            <AlertDescription className="flex w-full items-center justify-between gap-2 text-red-400">
-              <span>{error}</span>
-              {/未配置/.test(error) && navigate && (
-                <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); navigate("settings"); }}>
-                  去设置
-                </Button>
-              )}
-            </AlertDescription>
-          </Alert>
+          <Callout
+            tone="danger"
+            icon={CircleAlert}
+            actions={/未配置/.test(error) && navigate && (
+              <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); navigate("settings"); }}>
+                去设置
+              </Button>
+            )}
+          >
+            <span className="text-destructive">{error}</span>
+          </Callout>
         )}
         {data && !data.credentials_visible && (
-          <Alert className="border-amber-500/30 bg-amber-500/10">
-            <AlertDescription className="text-amber-400">
-              当前配置的 sub2api Key 读不到代理的用户名和密码，无法导入。请在「系统设置 → sub2api 对接」
-              改用完整的管理员 API Key。
-            </AlertDescription>
-          </Alert>
+          <Callout tone="warning" icon={TriangleAlert}>
+            当前配置的 sub2api Key 读不到代理的用户名和密码，无法导入。请在「系统设置 → sub2api 对接」
+            改用完整的管理员 API Key。
+          </Callout>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-48 flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-8" placeholder="搜索名称、主机、地区…" value={query}
+          <InputGroup className="min-w-48 flex-1">
+            <InputGroupAddon><Search /></InputGroupAddon>
+            <InputGroupInput placeholder="搜索名称、主机、地区…" value={query}
               onChange={(e) => setQuery(e.target.value)} />
-          </div>
-          <div className="flex rounded-md border p-0.5">
-            {FILTERS.map(([key, label]) => (
-              <button key={key} type="button"
-                className={cn("rounded px-2.5 py-1 text-xs transition-colors",
-                  filter === key ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}
-                onClick={() => setFilter(key)}>
-                {label}
-                <span className="ml-1 opacity-60">
-                  {key === "new" ? counts.fresh : key === "imported" ? counts.imported : counts.total}
-                </span>
-              </button>
-            ))}
-          </div>
-          <Button variant="outline" size="icon-sm" onClick={() => load()} disabled={loading || busy}
-            title="刷新">
+          </InputGroup>
+          <SegmentedTabs
+            value={filter}
+            onChange={setFilter}
+            items={FILTERS.map(([key, label]) => [
+              key,
+              label,
+              key === "new" ? counts.fresh : key === "imported" ? counts.imported : counts.total,
+            ])}
+          />
+          <TipButton variant="outline" size="icon" onClick={() => load()} disabled={loading || busy} tip="刷新">
             <RefreshCw className={cn(loading && "animate-spin")} />
-          </Button>
+          </TipButton>
         </div>
 
-        <div className="min-h-40 flex-1 overflow-auto rounded-lg border">
-          <div className="sticky top-0 z-10 grid grid-cols-[1.5rem_minmax(0,1.6fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_5.5rem] items-center gap-3 border-b bg-background/95 px-3 py-2 text-xs text-muted-foreground backdrop-blur max-sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem]">
-            <input type="checkbox" className="size-4 accent-primary" aria-label="全选可导入"
-              checked={allPicked} disabled={!pickable.length || busy} onChange={toggleAll} />
+        <div className="min-h-40 flex-1 overflow-auto rounded-lg ring-1 ring-foreground/10">
+          <div className="sticky top-0 z-10 grid h-9 grid-cols-[1.5rem_minmax(0,1.6fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_5.5rem] items-center gap-3 border-b bg-muted/80 px-3 text-xs font-medium text-muted-foreground backdrop-blur max-sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem]">
+            <Checkbox aria-label="全选可导入"
+              checked={allPicked ? true : pickable.some((p) => selected.has(p.id)) ? "indeterminate" : false}
+              disabled={!pickable.length || busy} onCheckedChange={toggleAll} />
             <span>名称</span>
             <span className="max-sm:hidden">地址</span>
             <span className="max-sm:hidden">地区 / 延迟</span>
@@ -210,7 +216,7 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
           </div>
           {loading && !data ? (
             <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> 正在读取 sub2api 代理…
+              <Spinner /> 正在读取 sub2api 代理…
             </div>
           ) : data && visible.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
@@ -220,17 +226,17 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
           ) : (
             <ul className="divide-y">
               {visible.map((p) => {
-                const [label, cls, tip] = stateBadge(p);
+                const [label, tone, tip] = stateBadge(p);
                 const can = selectable(p);
                 return (
                   <li key={p.id}>
                     <label className={cn(
                       "grid grid-cols-[1.5rem_minmax(0,1.6fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_5.5rem] items-center gap-3 px-3 py-2.5 text-sm max-sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem]",
-                      can ? "cursor-pointer hover:bg-accent/40" : "opacity-70",
+                      can ? "cursor-pointer hover:bg-muted/50" : "opacity-60",
                       selected.has(p.id) && "bg-primary/5",
                     )}>
-                      <input type="checkbox" className="size-4 accent-primary" aria-label={`选择 ${p.name}`}
-                        checked={selected.has(p.id)} disabled={!can || busy} onChange={() => toggle(p.id)} />
+                      <Checkbox aria-label={`选择 ${p.name}`}
+                        checked={selected.has(p.id)} disabled={!can || busy} onCheckedChange={() => toggle(p.id)} />
                       <span className="min-w-0">
                         <span className="flex items-center gap-1.5">
                           <span className="truncate font-medium" title={p.name}>{p.name}</span>
@@ -246,7 +252,7 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
                         </span>
                       </span>
                       <span className="flex min-w-0 items-center gap-1.5 max-sm:hidden">
-                        <Badge variant="outline" className="shrink-0 rounded px-1.5 font-mono text-[10px]">
+                        <Badge variant="secondary" className="shrink-0 rounded-md font-mono text-[10px]">
                           {protocolLabel(p.protocol)}
                         </Badge>
                         <span className="truncate font-mono text-xs" title={`${p.host}:${p.port}`}>
@@ -266,11 +272,11 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
                             {p.latency_ms} ms
                           </span>
                         ) : p.latency_status === "failed" ? (
-                          <span className="shrink-0 text-red-400">检测失败</span>
+                          <span className="shrink-0 text-destructive">检测失败</span>
                         ) : null}
                       </span>
                       <span className="flex justify-end">
-                        <Badge className={cn("rounded-full border-transparent", cls)} title={tip}>{label}</Badge>
+                        <Pill tone={tone} title={tip}>{label}</Pill>
                       </span>
                     </label>
                   </li>
@@ -281,7 +287,7 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
         </div>
 
         {report && report.results.length > 0 && (
-          <div className="max-h-32 overflow-auto rounded-md border bg-background/50 p-2 text-xs">
+          <div className="max-h-32 overflow-auto rounded-lg bg-muted/40 p-2.5 text-xs ring-1 ring-foreground/10">
             {report.results.map((r) => {
               const [label, cls] = RESULT[r.result] || [r.result, ""];
               return (
@@ -305,7 +311,7 @@ export function Sub2apiProxyImportDialog({ open, onOpenChange, onImported, navig
           <span className="flex flex-col-reverse gap-2 sm:flex-row">
             <AlertDialogCancel disabled={busy}>关闭</AlertDialogCancel>
             <Button onClick={doImport} disabled={busy || !picked}>
-              {busy ? <Loader2 className="animate-spin" /> : <Download />}
+              {busy ? <Spinner /> : <Download />}
               {busy ? "导入中…" : `导入所选（${picked}）`}
             </Button>
           </span>

@@ -1,23 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
+import { m } from "motion/react";
 import { toast } from "sonner";
-import { KeyRound, RefreshCw, Upload } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  KeyRound,
+  Link2,
+  RefreshCw,
+  SearchX,
+  Settings as SettingsIcon,
+  Upload,
+  UserX,
+  Users,
+  Wrench,
+} from "lucide-react";
 import { api } from "../api.js";
 import { cn } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/time";
+import { PageHeader } from "@/components/page-header";
+import { StatCard, StatGrid } from "@/components/stat-card";
+import { Callout } from "@/components/callout";
+import { Pill } from "@/components/pill";
+import { SegmentedTabs } from "@/components/segmented-tabs";
+import { TipButton } from "@/components/tip-button";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { useOrgPicker } from "@/components/org-select-dialog";
 import { OAuthImportDialog } from "@/components/oauth-import-dialog";
 
 const STATUS = {
-  active: ["正常", "bg-emerald-500/15 text-emerald-400"],
-  error: ["异常", "bg-red-500/15 text-red-400"],
-  disabled: ["已停用", "bg-muted text-muted-foreground"],
+  active: ["正常", "success"],
+  error: ["异常", "danger"],
+  disabled: ["已停用", "muted"],
 };
 
 const FILTERS = [
-  ["error", "需重新授权（异常）"],
+  ["error", "需重新授权"],
   ["fixable", "异常且可修复"],
   ["all", "全部"],
   ["unmatched", "本地无对应账号"],
@@ -42,19 +64,12 @@ function matchFilter(a, filter) {
   }
 }
 
-function fmtTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString();
-}
-
 function TokenExpiry({ iso }) {
   if (!iso) return null;
   const expired = new Date(iso).getTime() <= Date.now();
   return (
-    <span className={expired ? "text-red-400" : ""} title={iso}>
-      令牌{expired ? "已过期" : "过期"} {fmtTime(iso)}
+    <span className={expired ? "text-destructive" : ""} title={iso}>
+      令牌{expired ? "已过期" : "过期"} {fmtDateTime(iso)}
     </span>
   );
 }
@@ -93,7 +108,12 @@ export default function Sub2API({ navigate }) {
     [accounts, filter],
   );
   const selectedFixable = visible.filter((a) => selected.has(a.id) && canFix(a));
-  const errorCount = accounts.filter((a) => a.status === "error").length;
+  const counts = useMemo(() => ({
+    all: accounts.length,
+    error: accounts.filter((a) => a.status === "error").length,
+    fixable: accounts.filter((a) => a.status === "error" && canFix(a)).length,
+    unmatched: accounts.filter((a) => !a.local).length,
+  }), [accounts]);
 
   const setBusyFlag = (id, on) =>
     setBusy((prev) => {
@@ -165,6 +185,7 @@ export default function Sub2API({ navigate }) {
   const fixableVisible = visible.filter(canFix);
   const allSelected =
     fixableVisible.length > 0 && fixableVisible.every((a) => selected.has(a.id));
+  const someSelected = fixableVisible.some((a) => selected.has(a.id));
   const toggleAll = () =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -174,65 +195,82 @@ export default function Sub2API({ navigate }) {
     });
 
   return (
-    <>
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-          <CardTitle>sub2api 同步</CardTitle>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setImportOpen(true)} disabled={!!batch}>
-              <Upload /> 上传 OAuth JSON
-            </Button>
-            <Button variant="outline" size="sm" onClick={load} disabled={loading || !!batch}>
+    <div className="space-y-6">
+      <PageHeader
+        icon={KeyRound}
+        title="sub2api 同步"
+        description="列出 sub2api 里的 Claude OAuth 账号，按邮箱对应到本地账号。「重新授权」会用本地 sessionKey（经账号绑定的代理）获取新的 OAuth 令牌并写回 sub2api 的同一个账号：只替换令牌，保留并发、分组、模型映射等配置，同时清除异常状态。"
+        actions={
+          <>
+            <Button variant="outline" onClick={load} disabled={loading || !!batch}>
               <RefreshCw className={cn(loading && "animate-spin")} /> 刷新
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            列出 sub2api 里的 Claude OAuth 账号，按邮箱对应到本地账号。「重新授权」会用本地 sessionKey
-            （经账号绑定的代理）获取新的 OAuth 令牌，并写回 sub2api 的同一个账号：只替换令牌，
-            保留并发、分组、模型映射等配置，同时清除异常状态。
-            {data?.base_url ? <span className="ml-1 font-mono">{data.base_url}</span> : null}
-          </p>
-          {error && (
-            <Alert className="border-red-500/30 bg-red-500/10">
-              <AlertDescription className="flex w-full items-center justify-between gap-2 text-red-400">
-                <span>{error}</span>
-                {/未配置/.test(error) && (
-                  <Button variant="outline" size="sm" onClick={() => navigate("settings")}>
-                    去设置
-                  </Button>
-                )}
-              </AlertDescription>
-            </Alert>
+            <Button onClick={() => setImportOpen(true)} disabled={!!batch}>
+              <Upload /> 上传 OAuth JSON
+            </Button>
+          </>
+        }
+      />
+
+      {data?.base_url && (
+        <div className="-mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <Link2 className="size-3.5" />
+          已连接
+          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-foreground/80">{data.base_url}</code>
+        </div>
+      )}
+
+      {error && (
+        <Callout
+          tone="danger"
+          icon={CircleAlert}
+          title="无法读取 sub2api 账号"
+          actions={/未配置/.test(error) && (
+            <Button variant="outline" size="sm" onClick={() => navigate("settings")}>
+              <SettingsIcon /> 去设置
+            </Button>
           )}
+        >
+          {error}
+        </Callout>
+      )}
+
+      {data && (
+        <StatGrid>
+          <StatCard index={0} label="账号总数" value={counts.all} icon={Users} tone="primary"
+            onClick={() => setFilter("all")} active={filter === "all"} />
+          <StatCard index={1} label="异常" value={counts.error} icon={CircleAlert}
+            tone={counts.error ? "danger" : "muted"}
+            onClick={() => setFilter("error")} active={filter === "error"} />
+          <StatCard index={2} label="异常且可修复" value={counts.fixable} icon={Wrench} tone="warning"
+            onClick={() => setFilter("fixable")} active={filter === "fixable"} />
+          <StatCard index={3} label="本地无对应账号" value={counts.unmatched} icon={UserX} tone="muted"
+            onClick={() => setFilter("unmatched")} active={filter === "unmatched"} />
+        </StatGrid>
+      )}
+
+      {(data || loading) && (
+        <Card className="gap-0 py-0">
           {data && (
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+            <div className="flex flex-wrap items-center gap-3 border-b p-3">
+              <SegmentedTabs
                 value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              >
-                {FILTERS.map(([v, label]) => (
-                  <option key={v} value={v}>{label}</option>
-                ))}
-              </select>
-              <label className="flex h-9 cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground select-none">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={allSelected}
+                onChange={setFilter}
+                items={FILTERS.map(([k, label]) => [k, label, counts[k]])}
+              />
+              <label className="flex cursor-pointer items-center gap-2.5 px-1 text-sm text-muted-foreground select-none">
+                <Checkbox
+                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
                   disabled={fixableVisible.length === 0 || !!batch}
-                  onChange={toggleAll}
+                  onCheckedChange={toggleAll}
                 />
                 全选可修复
               </label>
-              <span className="text-xs text-muted-foreground">
-                共 {accounts.length} 个，异常 {errorCount} 个，当前显示 {visible.length} 个
-              </span>
+              <span className="flex-1" />
+              <span className="text-xs text-muted-foreground tabular-nums">显示 {visible.length} 个</span>
               {selectedFixable.length > 0 && (
-                <Button size="sm" disabled={!!batch} onClick={() => reauthBatch(selectedFixable)}>
-                  <KeyRound />
+                <Button disabled={!!batch} onClick={() => reauthBatch(selectedFixable)}>
+                  {batch ? <Spinner /> : <KeyRound />}
                   {batch
                     ? `处理中 ${batch.done}/${batch.total}…`
                     : `重新授权所选（${selectedFixable.length}）`}
@@ -241,38 +279,56 @@ export default function Sub2API({ navigate }) {
             </div>
           )}
           {loading && !data ? (
-            <div className="text-sm text-muted-foreground">加载中…</div>
-          ) : data && visible.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              {filter === "error" ? "sub2api 里没有异常的 Claude OAuth 账号" : "没有符合条件的账号"}
+            <div className="divide-y">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                  <Skeleton className="size-4" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3.5 w-56" />
+                    <Skeleton className="h-3 w-96 max-w-full" />
+                  </div>
+                  <Skeleton className="h-7 w-20" />
+                </div>
+              ))}
             </div>
+          ) : visible.length === 0 ? (
+            <Empty className="py-14">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">{filter === "error" ? <CircleCheck /> : <SearchX />}</EmptyMedia>
+                <EmptyTitle>
+                  {filter === "error" ? "sub2api 里没有异常的 Claude OAuth 账号" : "没有符合条件的账号"}
+                </EmptyTitle>
+                {filter === "error" && <EmptyDescription>所有账号状态正常，无需重新授权。</EmptyDescription>}
+              </EmptyHeader>
+            </Empty>
           ) : (
-            <ul className="flex flex-col gap-1.5">
-              {visible.map((a) => {
-                const st = STATUS[a.status] || [a.status || "未知", "bg-muted text-muted-foreground"];
+            <ul className="divide-y">
+              {visible.map((a, i) => {
+                const [label, tone] = STATUS[a.status] || [a.status || "未知", "muted"];
                 return (
-                  <li
+                  <m.li
                     key={a.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.015 }}
                     className={cn(
-                      "flex items-center justify-between gap-2 rounded-lg border bg-background/50 px-3 py-2.5 text-sm",
-                      selected.has(a.id) && "border-primary/60",
+                      "flex items-center gap-3 px-4 py-3 text-sm transition-colors",
+                      selected.has(a.id) && "bg-primary/5",
                     )}
                   >
-                    <input
-                      type="checkbox"
-                      className="size-4 shrink-0 accent-primary"
+                    <Checkbox
                       aria-label={`选择 ${a.name}`}
                       checked={selected.has(a.id)}
                       disabled={!canFix(a) || !!batch}
-                      onChange={() => toggle(a.id)}
+                      onCheckedChange={() => toggle(a.id)}
                     />
-                    <span className="flex min-w-0 flex-1 flex-col gap-1 overflow-hidden">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate" title={a.name}>{a.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">#{a.id}</span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-medium" title={a.name}>{a.name}</span>
+                        <span className="shrink-0 font-mono text-xs text-muted-foreground">#{a.id}</span>
                       </span>
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                        <Badge className={cn("rounded-full border-transparent", st[1])}>{st[0]}</Badge>
+                        <Pill tone={tone} dot>{label}</Pill>
                         <TokenExpiry iso={a.token_expires_at} />
                         {a.local ? (
                           <span>
@@ -283,37 +339,40 @@ export default function Sub2API({ navigate }) {
                             {a.local.has_session_key ? "" : " · 无 sessionKey"}
                           </span>
                         ) : (
-                          <span className="text-amber-400">
+                          <span className="text-warning">
                             {a.email ? `本地没有 ${a.email}` : "无法识别邮箱"}
                           </span>
                         )}
                       </span>
                       {a.error_message ? (
-                        <span className="truncate text-xs text-red-400/90" title={a.error_message}>
+                        <span
+                          className="w-fit max-w-full truncate rounded-md bg-destructive/8 px-2 py-1 font-mono text-[11px] text-destructive"
+                          title={a.error_message}
+                        >
                           {a.error_message}
                         </span>
                       ) : null}
                     </span>
-                    <Button
+                    <TipButton
                       variant="outline"
-                      size="sm"
                       className="shrink-0"
                       disabled={!canFix(a) || busy.has(a.id) || !!batch}
-                      title={canFix(a) ? "用本地 sessionKey 重新授权并写回 sub2api" : "本地没有可用的 sessionKey"}
+                      tip={canFix(a) ? "用本地 sessionKey 重新授权并写回 sub2api" : "本地没有可用的 sessionKey"}
                       onClick={() => reauth(a, { pickOrg: true })}
                     >
+                      {busy.has(a.id) ? <Spinner /> : <KeyRound />}
                       {busy.has(a.id) ? "授权中…" : "重新授权"}
-                    </Button>
-                  </li>
+                    </TipButton>
+                  </m.li>
                 );
               })}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </Card>
+      )}
       <OAuthImportDialog open={importOpen} onOpenChange={setImportOpen}
         onImported={() => { setFilter("all"); load(); }} />
       {orgPicker.dialog}
-    </>
+    </div>
   );
 }

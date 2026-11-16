@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { FileJson, Upload } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { api, prepareOAuthUpload } from "../api.js";
 import { Button } from "@/components/ui/button";
@@ -121,9 +122,11 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
 
   return (
     <AlertDialog open={open} onOpenChange={(value) => !busy && onOpenChange(value)}>
-      <AlertDialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <AlertDialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <AlertDialogHeader>
-          <AlertDialogTitle>上传 OAuth JSON</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <FileJson className="size-4 text-primary" /> 上传 OAuth JSON
+          </AlertDialogTitle>
           <AlertDialogDescription>
             可同时选择多个 Claude OAuth JSON 文件，全部校验后合并导入系统设置中配置的 Sub2API。
             支持单账号、账号数组、accounts 数组，以及 Claude Code 的 claudeAiOauth 格式。
@@ -136,16 +139,22 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
               disabled={!!busy} onChange={selectFile} />
             <p className="text-xs text-muted-foreground">每批最多 1000 个文件、合计 1000 个账号，上传总大小最多 10 MB，支持 UTF-8 BOM。</p>
           </div>
-          {busy === "preview" && <p role="status">正在校验文件…</p>}
-          {error && <p role="alert" className="text-red-400">{error}</p>}
+          {busy === "preview" && (
+            <p role="status" className="flex items-center gap-2 text-muted-foreground"><Spinner /> 正在校验文件…</p>
+          )}
+          {error && (
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive">
+              {error}
+            </p>
+          )}
           <OAuthImportSettings value={form} onChange={setForm} options={options} loading={optionsLoading}
             error={optionsError} onReload={loadOptions} disabled={!!busy || attempted} />
           {preview && (
             <div className="space-y-2">
               <p>已选择 {preview.files?.length || 1} 个文件，已识别 {preview.accounts.length} 个 Claude OAuth 账号</p>
-              <div className="max-h-52 overflow-auto rounded-md border">
+              <div className="max-h-52 overflow-auto rounded-lg ring-1 ring-foreground/10">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-muted">
+                  <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                     <tr><th className="p-2">账号名称</th><th className="p-2">并发</th>
                       <th className="p-2">优先级</th><th className="p-2">刷新令牌</th></tr>
                   </thead>
@@ -178,10 +187,10 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
             </div>
           )}
           {report && (
-            <div role="status" className="space-y-2 rounded-md border p-3">
+            <div role="status" className="space-y-2 rounded-lg bg-muted/40 p-3 ring-1 ring-foreground/10">
               <p>导入完成：成功 {report.created} 个，失败 {report.failed} 个。</p>
               {report.failed > 0 && <>
-                <p className="text-amber-400">请检查失败账号的凭据和配置，仅重新提交失败账号。</p>
+                <p className="text-warning">请检查失败账号的凭据和配置，仅重新提交失败账号。</p>
                 {report.failed_names.length > 0 && (
                   <ul className="max-h-32 list-inside list-disc overflow-auto break-all text-xs">
                     {report.failed_names.map((name, i) => <li key={i}>{name}</li>)}
@@ -194,7 +203,7 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={!!busy}>关闭</AlertDialogCancel>
           <Button onClick={doImport} disabled={!preview || !!busy || attempted || !options || optionsLoading}>
-            <Upload /> {busy === "import" ? "导入中…" : "确认导入 Sub2API"}
+            {busy === "import" ? <Spinner /> : <Upload />} {busy === "import" ? "导入中…" : "确认导入 Sub2API"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

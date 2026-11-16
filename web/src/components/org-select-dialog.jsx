@@ -3,6 +3,7 @@ import { Building2, ChevronRight } from "lucide-react";
 import { api } from "../api.js";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Pill } from "@/components/pill";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -45,7 +46,7 @@ export function useOrgPicker() {
 function OrgSelectDialog({ state, onDone }) {
   return (
     <AlertDialog open={!!state} onOpenChange={(o) => !o && onDone(undefined)}>
-      <AlertDialogContent className="max-w-lg">
+      <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>选择组织（工作空间）</AlertDialogTitle>
           <AlertDialogDescription>
@@ -60,26 +61,24 @@ function OrgSelectDialog({ state, onDone }) {
               type="button"
               onClick={() => onDone(o.uuid)}
               className={cn(
-                "group flex w-full items-center gap-3 rounded-lg border bg-muted/30 px-3.5 py-3 text-left",
-                "transition-colors hover:border-ring hover:bg-muted/60 focus-visible:border-ring focus-visible:outline-none",
-                o.uuid === state.def && "border-ring/60",
+                "group flex w-full items-center gap-3 rounded-lg border bg-muted/20 px-3.5 py-3 text-left",
+                "transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:border-ring focus-visible:outline-none",
+                o.uuid === state.def && "border-primary/40",
               )}
             >
-              <Building2 className="size-4 shrink-0 text-muted-foreground" />
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Building2 className="size-4" />
+              </span>
               <span className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="flex flex-wrap items-center gap-1.5">
                   <span className="truncate font-medium">{o.name || "（未命名组织）"}</span>
                   {o.uuid === state.current ? (
-                    <Badge className="rounded-full border-transparent bg-sky-500/15 text-sky-400">
-                      上次授权
-                    </Badge>
+                    <Pill tone="info">上次授权</Pill>
                   ) : o.uuid === state.def ? (
-                    <Badge variant="secondary" className="rounded-full">
-                      默认
-                    </Badge>
+                    <Badge variant="secondary">默认</Badge>
                   ) : null}
                   {o.raven_type ? (
-                    <Badge variant="outline" className="rounded-full font-normal">
+                    <Badge variant="outline" className="font-normal">
                       {o.raven_type}
                     </Badge>
                   ) : null}

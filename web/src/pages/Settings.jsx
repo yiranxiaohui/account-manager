@@ -1,11 +1,39 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  Bot,
+  Braces,
+  Check,
+  CodeXml,
+  Copy,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
+  Mail,
+  CirclePlay,
+  Plug,
+  RefreshCw,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareTerminal,
+} from "lucide-react";
 import { api } from "../api.js";
+import { PageHeader } from "@/components/page-header";
+import { SaveBar } from "@/components/save-bar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,22 +48,28 @@ import {
 const GROUPS = [
   {
     title: "面板",
+    description: "管理面板的访问密码与监听端口。",
+    icon: ShieldCheck,
     fields: [
-      { key: "panel_password", label: "面板密码（留空不修改）", type: "password" },
+      { key: "panel_password", label: "面板密码", hint: "留空不修改；修改后需用新密码重新登录。", type: "password" },
       { key: "panel_port", label: "面板端口", type: "number" },
     ],
   },
   {
     title: "AnyMail 邮箱",
+    description: "注册时用 AnyMail 创建邮箱并接收验证码。",
+    icon: Mail,
     fields: [
       { key: "anymail_api_key", label: "AnyMail API Key", type: "text" },
       { key: "anymail_base_url", label: "AnyMail Base URL", type: "text" },
       { key: "anymail_domain", label: "AnyMail 域名", type: "text" },
-      { key: "anymail_expires_hours", label: "邮箱有效期（小时，0=永久）", type: "number" },
+      { key: "anymail_expires_hours", label: "邮箱有效期（小时）", hint: "0 表示永久。", type: "number" },
     ],
   },
   {
     title: "注册参数",
+    description: "控制注册流程的超时、自动登录、验证码识别与代理。",
+    icon: SlidersHorizontal,
     fields: [
       { key: "register_login_timeout", label: "登录超时（秒）", type: "number" },
       { key: "register_auto_login", label: "注册后自动登录", type: "checkbox" },
@@ -47,7 +81,8 @@ const GROUPS = [
       { key: "register_code_regex", label: "验证码正则", type: "text" },
       {
         key: "register_proxy",
-        label: "注册代理（留空直连）",
+        label: "注册代理",
+        hint: "留空直连。",
         type: "text",
         placeholder: "http://user:pass@host:port 或 socks5://host:port",
       },
@@ -55,6 +90,8 @@ const GROUPS = [
   },
   {
     title: "sub2api 对接",
+    description: "用于账号同步与重新授权写回、代理导入，以及导出 sub2api 导入文件。",
+    icon: Plug,
     fields: [
       {
         key: "sub2api_base_url",
@@ -64,13 +101,16 @@ const GROUPS = [
       },
       {
         key: "sub2api_admin_key",
-        label: "sub2api 管理员 API Key（留空不修改；sub2api 后台 → 系统设置里生成）",
+        label: "sub2api 管理员 API Key",
+        hint: "留空不修改；在 sub2api 后台 → 系统设置里生成。",
         type: "password",
       },
     ],
   },
   {
     title: "开放 API",
+    description: "供外部脚本触发注册、导出与领取账号、获取 OAuth 令牌。",
+    icon: CodeXml,
     fields: [
       { key: "api_enabled", label: "启用开放 API（/api/v1/*）", type: "checkbox" },
       { key: "api_key", label: "API Key", type: "apikey" },
@@ -82,6 +122,7 @@ function ApiKeyField({ value, onRotated }) {
   const [shown, setShown] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   async function rotate() {
     setBusy(true);
@@ -102,6 +143,8 @@ function ApiKeyField({ value, onRotated }) {
     try {
       await navigator.clipboard.writeText(value);
       toast.success("已复制");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       // 非 HTTPS 页面没有剪贴板权限：显示出来让用户手动复制
       setShown(true);
@@ -113,38 +156,43 @@ function ApiKeyField({ value, onRotated }) {
     <div className="space-y-1.5">
       <Label htmlFor="api_key">API Key</Label>
       <div className="flex gap-2">
-        <Input
-          id="api_key"
-          readOnly
-          type={shown ? "text" : "password"}
-          value={value || ""}
-          placeholder="尚未生成"
-          className="font-mono"
-          onFocus={(e) => shown && e.target.select()}
-        />
-        {value && (
-          <>
-            <Button type="button" variant="outline" onClick={() => setShown((v) => !v)}>
-              {shown ? "隐藏" : "显示"}
-            </Button>
-            <Button type="button" variant="outline" onClick={copy}>复制</Button>
-          </>
-        )}
+        <InputGroup>
+          <InputGroupInput
+            id="api_key"
+            readOnly
+            type={shown ? "text" : "password"}
+            value={value || ""}
+            placeholder="尚未生成"
+            className="font-mono"
+            onFocus={(e) => shown && e.target.select()}
+          />
+          {value && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label={shown ? "隐藏" : "显示"} onClick={() => setShown((v) => !v)}>
+                {shown ? <EyeOff /> : <Eye />}
+              </InputGroupButton>
+              <InputGroupButton size="icon-xs" aria-label="复制" onClick={copy}>
+                {copied ? <Check className="text-success" /> : <Copy />}
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
         <Button
           type="button"
           variant="outline"
           disabled={busy}
           onClick={() => (value ? setConfirming(true) : rotate())}
         >
+          <RefreshCw className={busy ? "animate-spin" : ""} />
           {value ? "重新生成" : "生成"}
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        调用时放在请求头 <code>Authorization: Bearer &lt;key&gt;</code> 或 <code>X-API-Key</code>。
-        生成后立即生效，无需再点保存。
+        调用时放在请求头 <code className="rounded bg-muted px-1 py-0.5">Authorization: Bearer &lt;key&gt;</code> 或{" "}
+        <code className="rounded bg-muted px-1 py-0.5">X-API-Key</code>。生成后立即生效，无需再点保存。
       </p>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
+        <AlertDialogContent size="sm">
           <AlertDialogHeader>
             <AlertDialogTitle>重新生成 API Key？</AlertDialogTitle>
             <AlertDialogDescription>
@@ -164,23 +212,35 @@ function ApiKeyField({ value, onRotated }) {
 function ApiDocs() {
   const origin = window.location.origin;
   const links = [
-    [`${origin}/api/v1/docs.md`, "接口文档（Markdown，可直接发给 AI）"],
-    [`${origin}/api/v1/docs`, "在线调试（Swagger）"],
-    [`${origin}/api/v1/openapi.json`, "OpenAPI 规范（导入 Postman / Apifox）"],
-    [`${origin}/llms.txt`, "AI 入口（llms.txt）"],
+    [`${origin}/api/v1/docs.md`, "接口文档（Markdown，可直接发给 AI）", FileText],
+    [`${origin}/api/v1/docs`, "在线调试（Swagger）", CirclePlay],
+    [`${origin}/api/v1/openapi.json`, "OpenAPI 规范（导入 Postman / Apifox）", Braces],
+    [`${origin}/llms.txt`, "AI 入口（llms.txt）", Bot],
   ];
   return (
-    <div className="space-y-1 text-sm">
-      <div className="text-muted-foreground">接口文档（免 Key 访问，可分享给调用方）：</div>
-      <ul className="space-y-0.5">
-        {links.map(([href, label]) => (
-          <li key={href} className="flex flex-wrap gap-x-2">
-            <a className="font-mono text-xs text-primary underline-offset-2 hover:underline break-all"
-              href={href} target="_blank" rel="noopener noreferrer">{href}</a>
-            <span className="text-xs text-muted-foreground">{label}</span>
-          </li>
+    <div className="space-y-2">
+      <div className="text-sm font-medium">接口文档</div>
+      <p className="text-xs text-muted-foreground">免 Key 访问，可分享给调用方。</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {links.map(([href, label, Icon]) => (
+          <a
+            key={href}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-center gap-3 rounded-lg px-3 py-2.5 ring-1 ring-foreground/10 transition-colors hover:bg-muted/50"
+          >
+            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Icon className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{label}</span>
+              <span className="block truncate font-mono text-xs text-muted-foreground">{href.replace(origin, "")}</span>
+            </span>
+            <ExternalLink className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </a>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -209,17 +269,43 @@ function ApiUsage() {
     `  -d '{"email":"alice@example.com"}' "${base}/accounts/oauth"`,
   ].join("\n");
   return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-muted-foreground">调用示例</summary>
-      <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-3 text-xs leading-5">{example}</pre>
-      <p className="mt-1 text-xs text-muted-foreground">
-        可用字段：GET {base}/fields；可选代理：GET {base}/proxies。
+    <details className="group text-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-2 font-medium select-none [&::-webkit-details-marker]:hidden">
+        <SquareTerminal className="size-4 text-muted-foreground" />
+        调用示例
+        <span className="text-xs font-normal text-muted-foreground group-open:hidden">（点击展开）</span>
+      </summary>
+      <pre className="log-panel mt-3 overflow-x-auto rounded-lg bg-terminal p-3.5 text-[12px] text-terminal-foreground">
+        {example}
+      </pre>
+      <p className="mt-2 text-xs text-muted-foreground">
+        可用字段：<code>GET {base}/fields</code>；可选代理：<code>GET {base}/proxies</code>。
       </p>
     </details>
   );
 }
 
 const OWN_KEYS = GROUPS.flatMap((g) => g.fields.map((f) => f.key));
+
+function SettingsSection({ group, children }) {
+  const Icon = group.icon;
+  return (
+    <section className="grid gap-4 @3xl:grid-cols-[15rem_minmax(0,1fr)] @3xl:gap-8">
+      <div className="flex items-start gap-3 @3xl:pt-1">
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-foreground/5">
+          <Icon className="size-4" />
+        </span>
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold tracking-tight">{group.title}</h2>
+          <p className="text-xs text-pretty text-muted-foreground">{group.description}</p>
+        </div>
+      </div>
+      <Card>
+        <CardContent className="space-y-5">{children}</CardContent>
+      </Card>
+    </section>
+  );
+}
 
 export default function Settings({ onPasswordSet }) {
   const [form, setForm] = useState(null);
@@ -270,67 +356,88 @@ export default function Settings({ onPasswordSet }) {
     }
   }
 
-  if (loadError) return <div className="text-sm text-destructive">{loadError}</div>;
-  if (!form) return <div className="text-sm text-muted-foreground">加载中…</div>;
+  const header = (
+    <PageHeader
+      icon={SettingsIcon}
+      title="系统设置"
+      description="调整面板、邮箱、注册流程与外部对接参数。修改后点击底部「保存设置」生效。"
+    />
+  );
+
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <div className="text-sm text-destructive">{loadError}</div>
+      </div>
+    );
+  }
+  if (!form) {
+    return (
+      <div className="space-y-6">
+        {header}
+        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}
+      </div>
+    );
+  }
 
   return (
-    <>
-      <form onSubmit={save}>
+    <div className="@container space-y-6">
+      {header}
+      <form onSubmit={save} className="space-y-8">
         {GROUPS.map((group) => (
-          <Card className="mb-5" key={group.title}>
-            <CardHeader>
-              <CardTitle>{group.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {group.fields.map((f) =>
-                f.type === "apikey" ? (
-                  <ApiKeyField
-                    key={f.key}
-                    value={form[f.key]}
-                    onRotated={(k) => setField(f.key, k)}
+          <SettingsSection key={group.title} group={group}>
+            {group.fields.map((f) =>
+              f.type === "apikey" ? (
+                <ApiKeyField
+                  key={f.key}
+                  value={form[f.key]}
+                  onRotated={(k) => setField(f.key, k)}
+                />
+              ) : f.type === "checkbox" ? (
+                <div
+                  className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-3.5 py-3 ring-1 ring-foreground/5"
+                  key={f.key}
+                >
+                  <Label htmlFor={f.key} className="leading-snug">{f.label}</Label>
+                  <Switch
+                    id={f.key}
+                    checked={!!form[f.key]}
+                    onCheckedChange={(v) => setField(f.key, v)}
                   />
-                ) : f.type === "checkbox" ? (
-                  <div className="flex items-center justify-between" key={f.key}>
-                    <Label htmlFor={f.key}>{f.label}</Label>
-                    <Switch
-                      id={f.key}
-                      checked={!!form[f.key]}
-                      onCheckedChange={(v) => setField(f.key, v)}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1.5" key={f.key}>
-                    <Label htmlFor={f.key}>{f.label}</Label>
-                    <Input
-                      id={f.key}
-                      type={f.type}
-                      placeholder={f.placeholder ?? ""}
-                      value={form[f.key] ?? ""}
-                      onChange={(e) =>
-                        setField(
-                          f.key,
-                          f.type === "number"
-                            ? e.target.value.replace(/[^0-9.]/g, "")
-                            : e.target.value,
-                        )
-                      }
-                    />
-                  </div>
-                ),
-              )}
-              {group.title === "开放 API" && (
-                <>
-                  <ApiDocs />
-                  <ApiUsage />
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </div>
+              ) : (
+                <div className="space-y-1.5" key={f.key}>
+                  <Label htmlFor={f.key}>{f.label}</Label>
+                  <Input
+                    id={f.key}
+                    type={f.type}
+                    placeholder={f.placeholder ?? ""}
+                    value={form[f.key] ?? ""}
+                    autoComplete={f.type === "password" ? "new-password" : undefined}
+                    onChange={(e) =>
+                      setField(
+                        f.key,
+                        f.type === "number"
+                          ? e.target.value.replace(/[^0-9.]/g, "")
+                          : e.target.value,
+                      )
+                    }
+                  />
+                  {f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>}
+                </div>
+              ),
+            )}
+            {group.title === "开放 API" && (
+              <>
+                <ApiDocs />
+                <ApiUsage />
+              </>
+            )}
+          </SettingsSection>
         ))}
-        <Button type="submit" disabled={saving}>
-          {saving ? "保存中…" : "保存设置"}
-        </Button>
+        <SaveBar saving={saving} />
       </form>
-    </>
+    </div>
   );
 }
