@@ -21,8 +21,10 @@ from account_manager.oauth import OAuthError
 from account_manager.proxy_pool import ProxyPool, XuiNode
 from account_manager.session_check import check_session, probe_session
 from account_manager.xui import XuiClient
-from server import auth, db, export, oauth_acquire, open_api, sk_import, sub2api, sub2api_proxies
-from server.config_store import save_config, to_dict
+from server import (
+    account_proxy, auth, db, export, oauth_acquire, open_api, sk_import, sub2api, sub2api_proxies,
+)
+from server.config_store import CONFIG_LOCK, save_config, to_dict
 from server.deps import AppState, default_now
 from server.runner import RunnerBusy
 from server.takeover import TakeoverBusy, TakeoverError
@@ -103,11 +105,37 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
     @app.put("/api/config")
     async def put_config(request: Request, _=Depends(require_auth_or_bootstrap)):
         body = await request.json()
-        try:
-            cfg = save_config(state.config_path, body)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from None
+        with CONFIG_LOCK:
+            if isinstance(body, dict) and isinstance(body.get("saved_proxies"), list):
+                _guard_proxy_removal(body["saved_proxies"])
+            try:
+                cfg = save_config(state.config_path, body)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            if isinstance(body, dict) and "saved_proxies" in body:
+                # 代理池里改了地址时，已绑定的账号跟着用新地址
+                if state.reconcile_account_proxies().get("created"):
+                    cfg = state.config()
         return to_dict(cfg)
+
+    def _guard_proxy_removal(incoming: list) -> None:
+        """仍被账号使用的代理池条目不能删除（否则账号会用上代理池之外的代理）。"""
+        keep = {e.get("id") for e in incoming if isinstance(e, dict)}
+        usage = db.proxy_usage(state.conn)
+        blocked = [(p["name"], usage[p["id"]]) for p in state.config().saved_proxies
+                   if p["id"] not in keep and usage.get(p["id"])]
+        if blocked:
+            names = "、".join(f"「{name}」（{n} 个账号）" for name, n in blocked[:5])
+            more = f" 等 {len(blocked)} 个代理" if len(blocked) > 5 else ""
+            raise HTTPException(
+                status_code=409,
+                detail=f"{names}{more}仍被账号使用，请先在账号管理中为这些账号更换代理再删除",
+            )
+
+    @app.get("/api/proxies/usage")
+    def proxies_usage(_=Depends(require_auth)):
+        """每个代理池条目绑定的账号数：{usage: {proxy_id: n}}。"""
+        return {"usage": db.proxy_usage(state.conn)}
 
     @app.post("/api/xui/test")
     async def xui_test(request: Request, _=Depends(require_auth)):
@@ -338,6 +366,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         try:
             return await asyncio.to_thread(
                 sk_import.run_import, state.conn, body["text"], proxy=proxy,
+                proxy_id=proxy_id or "",
                 check=check, skip_dead=skip_dead, now=state.now_fn(), probe=probe,
             )
         except ValueError as exc:
@@ -355,13 +384,41 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
     def _editable_fields(body: dict) -> dict:
         fields = {}
         for k in db.ACCOUNT_EDITABLE_FIELDS:
-            if k not in body:
-                continue
+            if k in ("proxy", "proxy_id") or k not in body:
+                continue  # 代理由 _proxy_fields 单独处理
             v = body[k]
             if v is not None and not isinstance(v, str):
                 raise HTTPException(status_code=400, detail=f"{k} 必须是字符串")
             fields[k] = (v or "") if k == "password" else (v or "").strip()
         return fields
+
+    def _resolve_account_proxy(proxy_id) -> tuple[str, str]:
+        """面板传来的 proxy_id → （id，地址）；空值表示不使用代理。"""
+        if proxy_id is None or proxy_id == "":
+            return "", ""
+        if not isinstance(proxy_id, str):
+            raise HTTPException(status_code=400, detail="proxy_id 必须是字符串")
+        proxy_id = proxy_id.strip()
+        return proxy_id, resolve_saved_proxy(state.config(), proxy_id)
+
+    def _proxy_fields(body: dict, current: dict | None = None) -> dict:
+        """账号代理只能从代理池选择：只接受 proxy_id，不接受手填的 proxy 地址。
+
+        proxy_id 为空表示不使用代理；为兼容旧客户端，proxy 传空串也表示清除。
+        """
+        raw_proxy = body.get("proxy")
+        if raw_proxy not in (None, ""):
+            raise HTTPException(
+                status_code=400,
+                detail="账号代理只能从代理池选择（请传 proxy_id），不支持手动填写代理地址",
+            )
+        if "proxy_id" not in body:
+            return {"proxy_id": "", "proxy": ""} if "proxy" in body else {}
+        if current is not None and body["proxy_id"] and \
+                body["proxy_id"] == (current.get("proxy_id") or ""):
+            return {}  # 未改动：不重新校验，避免连带阻塞其它字段的保存
+        proxy_id, url = _resolve_account_proxy(body["proxy_id"])
+        return {"proxy_id": proxy_id, "proxy": url}
 
     def _valid_email(value) -> str:
         if not isinstance(value, str) or not value.strip():
@@ -373,11 +430,11 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
 
     @app.post("/api/accounts", status_code=201)
     async def account_create(request: Request, _=Depends(require_auth)):
-        """手动新增账号。body: {email, password?, session_key?, proxy?, display_name?,
-        mail_key?, mail_base_url?}。邮箱已存在返回 409。"""
+        """手动新增账号。body: {email, password?, session_key?, proxy_id?, display_name?,
+        mail_key?, mail_base_url?}。proxy_id 取自代理池；邮箱已存在返回 409。"""
         body = await _json_object(request)
         email = _valid_email(body.get("email"))
-        fields = _editable_fields(body)
+        fields = {**_editable_fields(body), **_proxy_fields(body)}
         try:
             row = db.create_account(state.conn, email, fields, created_at=state.now_fn())
         except db.AccountExists:
@@ -397,15 +454,35 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         deleted = db.delete_accounts(state.conn, emails)
         return {"ok": True, "deleted": deleted}
 
+    @app.post("/api/accounts/batch-proxy")
+    async def accounts_batch_proxy(request: Request, _=Depends(require_auth)):
+        """批量更换代理。body: {emails: [...], proxy_id: "代理池条目 id" | ""}。"""
+        body = await _json_object(request)
+        emails = body.get("emails")
+        if not isinstance(emails, list) or not all(isinstance(e, str) for e in emails):
+            raise HTTPException(status_code=400, detail="emails 必须是字符串数组")
+        if not emails:
+            raise HTTPException(status_code=400, detail="未选择任何账号")
+        if "proxy_id" not in body:
+            raise HTTPException(status_code=400, detail="请选择代理池中的代理")
+        proxy_id, url = _resolve_account_proxy(body["proxy_id"])
+        updated = db.set_accounts_proxy(state.conn, emails, proxy_id, url)
+        return {"ok": True, "updated": updated}
+
     @app.patch("/api/accounts/{email}")
     async def account_update(email: str, request: Request, _=Depends(require_auth)):
-        if db.get_account(state.conn, email) is None:
+        current = db.get_account(state.conn, email)
+        if current is None:
             raise HTTPException(status_code=404, detail="账号不存在")
         body = await _json_object(request)
         fields = _editable_fields(body)
+        proxy_fields = _proxy_fields(body, current)
         new_email = _valid_email(body["email"]) if "email" in body else email
-        if not fields and new_email == email:
+        if not fields and not proxy_fields and new_email == email and not (
+            "proxy_id" in body or "proxy" in body
+        ):
             raise HTTPException(status_code=400, detail="没有可更新的字段")
+        fields.update(proxy_fields)
         if new_email != email:
             if state.takeover.status().get("email") == email:
                 raise HTTPException(status_code=409, detail="该账号正在接管，请先结束接管再改邮箱")
@@ -612,16 +689,26 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
                 or sk_import.placeholder_email(session_key)
             )
             now = state.now_fn()
+            # 接管代理来自代理池（手动登录所选 / 账号已绑定的），入库时一并绑定条目 id。
+            proxy_id = ""
+            if proxy:
+                try:
+                    proxy_id, proxy = await asyncio.to_thread(
+                        state.bind_proxy_url, proxy, label=account_proxy.LABEL_TAKEOVER,
+                    )
+                except ValueError:
+                    pass  # 地址无法放进代理池（旧数据）：照旧保存，等用户改选
             created = db.get_account(state.conn, email) is None
             if created:
                 db.upsert_account(
                     state.conn, email, email.split("@", 1)[1], "", "", None, "success",
-                    session_key=session_key, proxy=proxy, created_at=now,
+                    session_key=session_key, proxy=proxy, proxy_id=proxy_id, created_at=now,
                 )
             else:
                 fields = {"session_key": session_key}
                 if proxy:
                     fields["proxy"] = proxy
+                    fields["proxy_id"] = proxy_id
                 db.update_account_fields(state.conn, email, fields)
             db.update_account_check(state.conn, email, check_status, now)
             state.takeover.mark_saved(email=email, session_key=session_key)

@@ -69,12 +69,17 @@ def run_import(
     text: str,
     *,
     proxy: str,
+    proxy_id: str = "",
     check: bool,
     skip_dead: bool,
     now: str,
     probe,
 ) -> dict:
-    """执行导入。probe(session_key, proxy, want_email) -> (status, detail, email)。"""
+    """执行导入。probe(session_key, proxy, want_email) -> (status, detail, email)。
+
+    proxy / proxy_id 是同一个代理池条目的地址与 id；为空时新账号不绑定代理，
+    已有账号保留原代理。
+    """
     items, results = parse(text)
     if len(items) + len(results) > MAX_LINES:
         raise ValueError(f"单次最多导入 {MAX_LINES} 行")
@@ -99,13 +104,15 @@ def run_import(
         if existing is None:
             db.upsert_account(
                 conn, email, email.split("@", 1)[1], "", "", None, "success",
-                session_key=item.session_key, proxy=proxy, created_at=now,
+                session_key=item.session_key, proxy=proxy, proxy_id=proxy_id,
+                created_at=now,
             )
             result = "created"
         else:
             fields = {"session_key": item.session_key}
             if proxy:
                 fields["proxy"] = proxy
+                fields["proxy_id"] = proxy_id
             db.update_account_fields(conn, email, fields)
             result = "updated"
         if status:

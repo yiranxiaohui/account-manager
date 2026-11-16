@@ -177,6 +177,7 @@ def test_manual_login_creates_account_from_probed_email(env):
     row = db.get_account(_conn(env), "real@x.com")
     assert row["session_key"] == "sk-ant-sid01-manual"
     assert row["proxy"] == "socks5://u:p@1.2.3.4:1080"
+    assert row["proxy_id"] == "p1"  # 绑定所选代理池条目
     assert row["status"] == "success"
     assert row["check_status"] == "alive"
     # 会话归属切到新账号，之后可以「重新自动登录」

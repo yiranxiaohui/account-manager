@@ -215,6 +215,8 @@ def register_sub2api_proxy_routes(app: FastAPI, state, *, require_auth) -> None:
                     save_config(state.config_path, {"saved_proxies": merged})
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from None
+                # 同步改了地址时，已绑定这些条目的账号跟着用新地址
+                state.reconcile_account_proxies()
         summary = summarize(results)
         log("sub2api 代理同步：" + "，".join(f"{k} {v}" for k, v in summary.items() if v))
         return {"summary": summary, "results": results}

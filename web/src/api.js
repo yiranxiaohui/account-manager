@@ -126,6 +126,14 @@ export const api = {
       body: JSON.stringify({ emails }),
     }).then(j),
 
+  // proxyId 为代理池条目 id，空串表示不使用代理
+  accountsBatchProxy: (emails, proxyId) =>
+    fetch("/api/accounts/batch-proxy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emails, proxy_id: proxyId }),
+    }).then(j),
+
   accountUpdate: (email, fields) =>
     fetch(`/api/accounts/${encodeURIComponent(email)}`, {
       method: "PATCH",
@@ -205,6 +213,9 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then(j),
+
+  // { usage: { 代理池条目 id: 绑定的账号数 } }
+  proxyUsage: () => fetch("/api/proxies/usage").then(j),
 
   xuiTest: (node) =>
     fetch("/api/xui/test", {

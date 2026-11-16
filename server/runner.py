@@ -16,10 +16,12 @@ class RunnerBusy(Exception):
 
 
 class Runner:
-    def __init__(self, conn, data_dir: Path, now_fn):
+    def __init__(self, conn, data_dir: Path, now_fn, *, proxy_binder=None):
         self.conn = conn
         self.data_dir = Path(data_dir)
         self.now_fn = now_fn
+        # 代理地址 → (代理池条目 id, 条目地址)；账号只绑定代理池里的代理。
+        self.proxy_binder = proxy_binder
         self._lock = threading.Lock()
         self._active_id: int | None = None
         self._queues: dict[int, queue.Queue] = {}
@@ -56,6 +58,16 @@ class Runner:
                              daemon=True)
         t.start()
         return rid
+
+    def _bind_proxy(self, url: str, sink) -> tuple[str, str]:
+        """注册用的代理 → 代理池条目；失败时保留地址、暂不绑定（下次启动会再整理）。"""
+        if not url or self.proxy_binder is None:
+            return "", url
+        try:
+            return self.proxy_binder(url)
+        except Exception as exc:  # noqa: BLE001 — 绑定失败不能丢掉刚注册的账号
+            sink(f"代理未能加入代理池（{type(exc).__name__}），账号暂不绑定代理池条目。")
+            return "", url
 
     def _auto_oauth(self, email: str, sink) -> None:
         """注册成功后自动获取 OAuth 令牌；失败只记日志，不影响注册结果。"""
@@ -96,6 +108,10 @@ class Runner:
                 )
                 self.conn.commit()
                 acct_status = "success" if result.get("sessionKey") else "needs_manual"
+                proxy_id, proxy_url = self._bind_proxy(
+                    str(result.get("proxy") or getattr(config, "register_proxy", "") or ""),
+                    sink,
+                )
                 db.upsert_account(
                     self.conn,
                     acct_email,
@@ -106,11 +122,8 @@ class Runner:
                     acct_status,
                     password=str(result.get("password") or ""),
                     session_key=str(result.get("sessionKey") or ""),
-                    proxy=str(
-                        result.get("proxy")
-                        or getattr(config, "register_proxy", "")
-                        or ""
-                    ),
+                    proxy=proxy_url,
+                    proxy_id=proxy_id,
                     display_name=str(result.get("display_name") or ""),
                     created_at=self.now_fn(),
                     mail_key=str(result.get("mail_key") or ""),

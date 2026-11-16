@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
-from server import db
+from server import account_proxy, db
 from server.config_store import Config, load_config
 from server.legacy_xray import migrate_register_proxy
 from server.runner import Runner
@@ -38,7 +38,11 @@ class AppState:
         migrate_register_proxy(self.config_path, self.data_dir)
         self.conn = db.init_db(resolve_db_path(self.data_dir))
         db.mark_stale_running_as_failed(self.conn)  # 重启清理残留 running
-        self.runner = Runner(self.conn, self.data_dir, now_fn)
+        # 账号代理只能来自代理池：把旧版手填的代理迁移成代理池条目并绑定（幂等）。
+        account_proxy.reconcile(self.conn, self.config_path)
+        self.runner = Runner(
+            self.conn, self.data_dir, now_fn, proxy_binder=self.bind_proxy_url,
+        )
         # 首次启动生成随机会话密钥并持久化（data_dir 已 gitignore，不会被提交）。
         secret_path = self.data_dir / "secret.key"
         if secret_path.exists():
@@ -50,3 +54,10 @@ class AppState:
 
     def config(self) -> Config:
         return load_config(self.config_path)
+
+    def bind_proxy_url(self, url: str, *, label: str = account_proxy.LABEL_REGISTER):
+        """代理地址 → （代理池条目 id，条目地址）；代理池里没有时自动加入。"""
+        return account_proxy.bind_url(self.config_path, url, label=label)
+
+    def reconcile_account_proxies(self) -> dict:
+        return account_proxy.reconcile(self.conn, self.config_path)

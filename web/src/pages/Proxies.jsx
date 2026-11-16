@@ -87,12 +87,14 @@ export default function Proxies({ navigate }) {
   const [confirm, setConfirm] = useState(null); // {title, description, onConfirm}
   const [missing, setMissing] = useState(() => new Set());
   const [syncing, setSyncing] = useState(false);
+  const [usage, setUsage] = useState({}); // {条目 id: 绑定的账号数}
 
   async function reload() {
     try {
-      const cfg = await api.getConfig();
+      const [cfg, used] = await Promise.all([api.getConfig(), api.proxyUsage()]);
       setItems(cfg.saved_proxies || []);
       setSub2apiBase(normalizeBase(cfg.sub2api_base_url));
+      setUsage(used.usage || {});
     } catch (e) {
       if (e?.status !== 401) toast.error("代理池加载失败");
     } finally {
@@ -221,11 +223,23 @@ export default function Proxies({ navigate }) {
 
   function askDelete(list) {
     if (!list.length) return;
-    const ids = new Set(list.map((p) => p.id));
+    // 仍被账号使用的代理不能删：账号代理只能来自代理池
+    const used = list.filter((p) => usage[p.id]);
+    const deletable = list.filter((p) => !usage[p.id]);
+    const usedText = used.slice(0, 3).map((p) => `「${p.name}」（${usage[p.id]} 个账号）`).join("、")
+      + (used.length > 3 ? ` 等 ${used.length} 个代理` : "");
+    if (!deletable.length) {
+      toast.error(`${usedText}仍被账号使用，请先在账号管理中为这些账号更换代理再删除`, {
+        duration: 8000,
+      });
+      return;
+    }
+    const ids = new Set(deletable.map((p) => p.id));
     setConfirm({
-      title: list.length === 1 ? `删除代理「${list[0].name}」？` : `删除 ${list.length} 个代理？`,
-      description: "只从本地代理池移除，已绑定这些代理的账号仍保留原代理地址；sub2api 中的代理不受影响。",
-      onConfirm: () => persist(items.filter((p) => !ids.has(p.id)), `已删除 ${list.length} 个代理`),
+      title: deletable.length === 1 ? `删除代理「${deletable[0].name}」？` : `删除 ${deletable.length} 个代理？`,
+      description: (used.length ? `${usedText}仍被账号使用，将保留。` : "")
+        + "只从本地代理池移除，sub2api 中的代理不受影响。",
+      onConfirm: () => persist(items.filter((p) => !ids.has(p.id)), `已删除 ${deletable.length} 个代理`),
     });
   }
 
@@ -269,7 +283,8 @@ export default function Proxies({ navigate }) {
           <div className="min-w-0 flex-1 basis-72 space-y-1.5">
             <CardTitle className="flex items-center gap-2"><Globe className="size-4" /> 代理池</CardTitle>
             <CardDescription>
-              保存常用代理，供注册任务、sessionKey 导入与手动登录选择；也可以直接导入 sub2api 里的代理。
+              保存常用代理，供注册任务、sessionKey 导入、手动登录与账号绑定选择；也可以直接导入 sub2api 里的代理。
+              账号只能使用这里的代理：修改地址后已绑定的账号会跟着使用新地址，仍被账号使用的代理不能删除。
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -416,6 +431,12 @@ export default function Proxies({ navigate }) {
                         <span className="flex items-center gap-1.5">
                           <span className="truncate font-medium" title={p.name}>{p.name}</span>
                           <SourceBadge entry={p} currentBase={sub2apiBase} />
+                          {usage[p.id] ? (
+                            <Badge variant="outline" className="shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground"
+                              title="绑定该代理的账号数；仍被使用时不能删除">
+                              {usage[p.id]} 个账号
+                            </Badge>
+                          ) : null}
                           {missing.has(p.id) && (
                             <Badge className="rounded-full border-transparent bg-amber-500/15 px-1.5 text-[10px] text-amber-400">
                               上游已移除

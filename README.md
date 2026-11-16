@@ -50,12 +50,19 @@ docker compose up -d
 
 「账号管理」页支持完整的增删改查：
 
-- **增**：「新增账号」手动录入已有账号，只有邮箱必填，可同时填写备注、密码、sessionKey、代理、mailUrl、mailKey；邮箱已存在时拒绝（不会覆盖）。也可以继续用「导入 SK…」「手动登录…」批量/交互式建号。
-- **查**：按邮箱 / 备注 / 代理 / sessionKey 搜索，并按存活检测结果（有效、失效、被拦截、未检测）、是否已获取、是否有 sessionKey 筛选。
-- **改**：「编辑」可修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。
+- **增**：「新增账号」手动录入已有账号，只有邮箱必填，可同时填写备注、密码、sessionKey、mailUrl、mailKey，并从代理池中选择代理；邮箱已存在时拒绝（不会覆盖）。也可以继续用「导入 SK…」「手动登录…」批量/交互式建号。
+- **查**：按邮箱 / 备注 / 代理名称或地址 / sessionKey 搜索，并按存活检测结果（有效、失效、被拦截、未检测）、是否已获取、是否有 sessionKey 筛选。
+- **改**：「编辑」可修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。勾选账号后可「设置代理」批量更换代理。
 - **删**：每行的删除按钮单个删除，或勾选（支持全选当前筛选结果）后「删除所选」批量删除，均需二次确认。
 
-对应的面板内部接口（需面板登录 Cookie）：`GET /api/accounts`、`POST /api/accounts`、`PATCH /api/accounts/{email}`、`DELETE /api/accounts/{email}`、`POST /api/accounts/batch-delete`（body `{"emails": [...]}`）。
+**账号代理只能从代理池选择**，不能手填代理地址。账号记录 `proxy_id`（代理池条目 ID）和 `proxy`（该条目地址的副本，检测、接管、OAuth、导出仍读它）：
+
+- 接口只接受 `proxy_id`（空串表示不使用代理）；传非空的 `proxy` 地址返回 400。
+- 启动时自动迁移旧版手填的代理：地址与代理池条目相同（或协议族、主机、端口、凭据都相同，`socks5` 与 `socks5h` 视为同一代理）的直接绑定该条目，否则新建名为「账号迁移 · 主机:端口」的代理池条目再绑定；无法放进代理池的无效地址保持原样，面板显示「代理未入池」，编辑时可改选。迁移是幂等的。
+- 注册任务（选代理池代理、设置页固定注册代理或 3x-ui 专属代理）、导入 SK、手动登录 / 接管拿到的代理同样绑定到代理池条目，代理池里没有时自动新增。
+- 在代理池修改条目地址或「同步 sub2api」后，已绑定的账号自动改用新地址；仍被账号使用的条目不能删除（`PUT /api/config` 返回 409）。
+
+对应的面板内部接口（需面板登录 Cookie）：`GET /api/accounts`、`POST /api/accounts`、`PATCH /api/accounts/{email}`、`DELETE /api/accounts/{email}`、`POST /api/accounts/batch-delete`（body `{"emails": [...]}`）、`POST /api/accounts/batch-proxy`（body `{"emails": [...], "proxy_id": "…"}`）、`GET /api/proxies/usage`（每个代理池条目绑定的账号数）。
 
 ## Xpra HTML5 免密登录接管
 
@@ -170,8 +177,8 @@ sub2api 里的 Claude OAuth 账号 refresh_token 失效（如 `invalid_grant`）
 
 ## 代理池
 
-「代理池」页保存常用代理（`config.yaml` 的 `register.proxies`），注册任务、sessionKey 导入、手动登录和
-开放 API 的 `proxy_id` 都从这里选。支持 HTTP(S) 与 SOCKS5（带认证的 SOCKS5 自动经本地中继）。
+「代理池」页保存常用代理（`config.yaml` 的 `register.proxies`），注册任务、sessionKey 导入、手动登录、
+账号绑定和开放 API 的 `proxy_id` 都从这里选。支持 HTTP(S) 与 SOCKS5（带认证的 SOCKS5 自动经本地中继）。
 
 - **测试**：单个 / 所选 / 全部测试（并发 4），经代理请求 ipinfo.io（失败依次换 ipwho.is、ipapi.co），
   显示出口 IP、地区与延迟。结果只存在浏览器本地，代理的协议 / 主机 / 端口变化后自动作废；接口是
@@ -184,7 +191,8 @@ sub2api 里的 Claude OAuth 账号 refresh_token 失效（如 `invalid_grant`）
 - **同步 sub2api**：导入的条目记录来源实例与 sub2api 代理 ID（`source`、`source_id`、
   `source_base_url`）。「同步 sub2api」按 sub2api 当前数据更新这些条目的地址与凭据，保留本地名称和
   条目 ID；sub2api 中已删除或停用的只提示、不自动删除。来自其他 sub2api 实例的条目不参与同步。
-- 已绑定到账号的是代理地址本身：同步或删除代理池条目不会改动已有账号的代理字段。
+- 账号绑定的是代理池条目：编辑或同步条目地址后，绑定它的账号随之更新；每个条目显示绑定的账号数，
+  仍被账号使用的条目不能删除（批量删除时跳过它们），需先在账号管理里为这些账号更换代理。
 
 ## 开放 API（触发注册、按需导出）
 

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS accounts (
   email TEXT UNIQUE, domain TEXT, created_at TEXT, expires_at TEXT,
   mailbox_id TEXT, last_run_id INTEGER, status TEXT,
-  password TEXT, session_key TEXT, proxy TEXT, display_name TEXT,
+  password TEXT, session_key TEXT, proxy TEXT, proxy_id TEXT, display_name TEXT,
   mail_key TEXT, mail_base_url TEXT,
   check_status TEXT, checked_at TEXT, claimed_at TEXT,
   access_token TEXT, refresh_token TEXT, oauth_expires_at TEXT, oauth_scope TEXT,
@@ -26,6 +26,8 @@ _ACCOUNT_EXTRA_COLS = (
     ("password", "TEXT"),
     ("session_key", "TEXT"),
     ("proxy", "TEXT"),
+    # 绑定的代理池条目 id（config.yaml register.proxies[].id）；proxy 是该条目地址的副本
+    ("proxy_id", "TEXT"),
     ("display_name", "TEXT"),
     ("mail_key", "TEXT"),
     ("mail_base_url", "TEXT"),
@@ -118,6 +120,7 @@ def upsert_account(
     password: str = "",
     session_key: str = "",
     proxy: str = "",
+    proxy_id: str = "",
     display_name: str = "",
     created_at: str = "",
     mail_key: str = "",
@@ -125,13 +128,13 @@ def upsert_account(
 ) -> None:
     conn.execute(
         "INSERT INTO accounts(email,domain,created_at,expires_at,mailbox_id,last_run_id,status,"
-        "password,session_key,proxy,display_name,mail_key,mail_base_url) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "password,session_key,proxy,proxy_id,display_name,mail_key,mail_base_url) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(email) DO UPDATE SET domain=excluded.domain, "
         "expires_at=excluded.expires_at, mailbox_id=excluded.mailbox_id, "
         "last_run_id=excluded.last_run_id, status=excluded.status, "
         "password=excluded.password, session_key=excluded.session_key, "
-        "proxy=excluded.proxy, display_name=excluded.display_name, "
+        "proxy=excluded.proxy, proxy_id=excluded.proxy_id, display_name=excluded.display_name, "
         "mail_key=excluded.mail_key, mail_base_url=excluded.mail_base_url",
         (
             email,
@@ -144,6 +147,7 @@ def upsert_account(
             password or "",
             session_key or "",
             proxy or "",
+            proxy_id or "",
             display_name or "",
             mail_key or "",
             mail_base_url or "",
@@ -162,9 +166,11 @@ def get_account(conn, email) -> dict | None:
     return dict(row) if row else None
 
 
-# 面板可手工编辑的字段；email/status 等由注册流程维护，不开放
+# 可写入的账号字段；email/status 等由注册流程维护，不开放。proxy / proxy_id 只能由
+# 服务端按代理池条目成对写入（面板只传 proxy_id，见 server.account_proxy）。
 ACCOUNT_EDITABLE_FIELDS = (
-    "password", "session_key", "proxy", "display_name", "mail_key", "mail_base_url",
+    "password", "session_key", "proxy", "proxy_id", "display_name", "mail_key",
+    "mail_base_url",
 )
 
 
@@ -218,6 +224,31 @@ def update_account_fields(conn, email, fields: dict) -> bool:
     cur = conn.execute(sql, (*sets.values(), email))
     conn.commit()
     return cur.rowcount > 0
+
+
+def set_accounts_proxy(conn, emails, proxy_id: str, proxy: str) -> int:
+    """批量把账号绑定到同一个代理池条目（proxy_id 为空表示不使用代理），返回更新行数。"""
+    emails = list(dict.fromkeys(emails))
+    updated = 0
+    for i in range(0, len(emails), 500):  # 避开 SQLite 变量个数上限
+        chunk = emails[i:i + 500]
+        cur = conn.execute(
+            "UPDATE accounts SET proxy_id=?, proxy=? "
+            f"WHERE email IN ({','.join('?' * len(chunk))})",
+            (proxy_id or "", proxy or "", *chunk),
+        )
+        updated += cur.rowcount
+    conn.commit()
+    return updated
+
+
+def proxy_usage(conn) -> dict[str, int]:
+    """每个代理池条目被多少个账号使用：{proxy_id: 账号数}。"""
+    rows = conn.execute(
+        "SELECT proxy_id, COUNT(*) FROM accounts WHERE COALESCE(proxy_id,'')<>'' "
+        "GROUP BY proxy_id"
+    ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
 
 
 def update_account_check(conn, email, status, checked_at) -> bool:

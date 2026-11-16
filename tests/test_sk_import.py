@@ -78,6 +78,7 @@ def test_import_with_proxy_check_and_skip_dead(tmp_path, monkeypatch):
                                     (SK3, PROXY_URL, True)])
     a = db.get_account(conn, "found@claude.ai")
     assert a["session_key"] == SK1 and a["proxy"] == PROXY_URL
+    assert a["proxy_id"] == "p1"  # 绑定代理池条目
     assert a["status"] == "success" and a["check_status"] == "alive"
     assert db.get_account(conn, "keep@x.com")["session_key"] == SK2
     assert db.get_account(conn, sk_import.placeholder_email(SK3)) is None

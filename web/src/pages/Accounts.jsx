@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, KeyRound, LogIn, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Download, Globe, KeyRound, LogIn, Plus, Search, Trash2, Upload } from "lucide-react";
 import { api } from "../api.js";
 import { cn } from "@/lib/utils";
+import { maskProxyUrl, parseProxyUrl } from "@/lib/proxy";
 import { StatusBadge } from "@/components/status-badge";
 import { ExportDialog } from "@/components/export-dialog";
 import { ImportDialog } from "@/components/import-dialog";
 import { ManualLoginDialog } from "@/components/manual-login-dialog";
 import { useOrgPicker } from "@/components/org-select-dialog";
+import { KEEP_PROXY, ProxySelect } from "@/components/proxy-select";
 import {
   AccountCreateDialog,
   AccountFields,
+  accountPayload,
   emptyAccountForm,
 } from "@/components/account-create-dialog";
 import { Button } from "@/components/ui/button";
@@ -65,10 +68,38 @@ function matchFilter(a, filter) {
   }
 }
 
-function matchQuery(a, q) {
+function matchQuery(a, q, proxyById) {
   if (!q) return true;
-  return [a.email, a.display_name, a.proxy, a.session_key]
+  return [a.email, a.display_name, proxyById[a.proxy_id]?.name, parseProxyUrl(a.proxy)?.address,
+    a.session_key]
     .some((v) => String(v || "").toLowerCase().includes(q));
+}
+
+// 账号绑定的代理：显示代理池条目名称；地址不在代理池时（无法迁移的旧数据）黄色提示
+function ProxyBadge({ acct, proxyById }) {
+  if (!acct.proxy) return null;
+  const entry = proxyById[acct.proxy_id];
+  if (!entry) {
+    return (
+      <Badge
+        className="rounded-full border-transparent bg-amber-500/15 px-1.5 text-[11px] text-amber-400"
+        title={`代理不在代理池：${maskProxyUrl(acct.proxy)}，请编辑账号改选代理池中的代理`}
+      >
+        代理未入池
+      </Badge>
+    );
+  }
+  const addr = parseProxyUrl(entry.url)?.address;
+  return (
+    <Badge
+      variant="outline"
+      className="max-w-48 rounded-full px-1.5 text-[11px]"
+      title={[addr, entry.location].filter(Boolean).join(" · ")}
+    >
+      <Globe className="size-3" />
+      <span className="truncate">{entry.name}</span>
+    </Badge>
+  );
 }
 
 const LIVE_LABEL = { alive: "有效", dead: "失效", blocked: "被拦截", error: "检测失败" };
@@ -168,11 +199,17 @@ export default function Accounts({ attach, running, navigate }) {
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
+  const [proxies, setProxies] = useState([]);
+  const [batchProxy, setBatchProxy] = useState(null); // {emails, proxyId, busy}
+  const proxyById = useMemo(
+    () => Object.fromEntries(proxies.map((p) => [p.id, p])),
+    [proxies],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return accounts.filter((a) => matchFilter(a, filter) && matchQuery(a, q));
-  }, [accounts, query, filter]);
+    return accounts.filter((a) => matchFilter(a, filter) && matchQuery(a, q, proxyById));
+  }, [accounts, query, filter, proxyById]);
   const selectedVisible = visible.filter((a) => selected.has(a.email));
   const allVisibleSelected = visible.length > 0 && selectedVisible.length === visible.length;
 
@@ -204,6 +241,7 @@ export default function Accounts({ attach, running, navigate }) {
   function refreshLists() {
     api.listAccounts().then(setAccounts).catch(() => {});
     api.takeoverStatus().then(setTakeover).catch(() => {});
+    api.getConfig().then((cfg) => setProxies(cfg.saved_proxies || [])).catch(() => {});
   }
 
   useEffect(() => {
@@ -443,14 +481,17 @@ export default function Accounts({ attach, running, navigate }) {
   const startEdit = (a) => {
     setEditingEmail(a.email);
     const base = emptyAccountForm();
-    setEditForm(Object.fromEntries(Object.keys(base).map((k) => [k, a[k] || ""])));
+    const form = Object.fromEntries(Object.keys(base).map((k) => [k, a[k] || ""]));
+    // 代理地址不在代理池时默认「保持原代理」，只改其它字段不会把它清掉
+    if (a.proxy && !proxyById[a.proxy_id]) form.proxy_id = KEEP_PROXY;
+    setEditForm(form);
   };
 
   const saveEdit = async () => {
     if (!String(editForm.email || "").trim()) return toast.error("邮箱不能为空");
     setSaving(true);
     try {
-      const row = await api.accountUpdate(editingEmail, editForm);
+      const row = await api.accountUpdate(editingEmail, accountPayload(editForm));
       if (row.email !== editingEmail) {
         setSelected((prev) => {
           if (!prev.has(editingEmail)) return prev;
@@ -481,6 +522,22 @@ export default function Accounts({ attach, running, navigate }) {
       toast.success(claimed ? "已标记为已获取" : "已取消「已获取」标记");
     } catch (e) {
       toast.error(`操作失败（${e.status || "?"}）`);
+    }
+  };
+
+  const confirmBatchProxy = async () => {
+    const { emails, proxyId } = batchProxy;
+    setBatchProxy((s) => ({ ...s, busy: true }));
+    try {
+      const res = await api.accountsBatchProxy(emails, proxyId);
+      const name = proxyId ? proxyById[proxyId]?.name || "所选代理" : "不使用代理";
+      toast.success(`已将 ${res.updated} 个账号的代理设为「${name}」`);
+      setBatchProxy(null);
+      refreshLists();
+    } catch (e) {
+      if (e?.status === 401) return;
+      toast.error(e.body?.detail || `设置代理失败（${e.status || "?"}）`);
+      setBatchProxy((s) => s && { ...s, busy: false });
     }
   };
 
@@ -593,7 +650,7 @@ export default function Accounts({ attach, running, navigate }) {
                 <Input
                   className="pl-8"
                   value={query}
-                  placeholder="搜索邮箱 / 备注 / 代理 / sessionKey"
+                  placeholder="搜索邮箱 / 备注 / 代理名称 / sessionKey"
                   spellCheck={false}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -637,6 +694,22 @@ export default function Accounts({ attach, running, navigate }) {
                   {batchOAuth
                     ? `授权中 ${batchOAuth.done}/${batchOAuth.total}…`
                     : `获取 OAuth（${selectedVisible.filter((a) => a.session_key).length}）`}
+                </Button>
+              )}
+              {selectedVisible.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="为所选账号统一更换代理池中的代理"
+                  onClick={() =>
+                    setBatchProxy({
+                      emails: selectedVisible.map((a) => a.email),
+                      proxyId: "",
+                      busy: false,
+                    })
+                  }
+                >
+                  <Globe /> 设置代理（{selectedVisible.length}）
                 </Button>
               )}
               {selectedVisible.length > 0 && (
@@ -697,9 +770,7 @@ export default function Accounts({ attach, running, navigate }) {
                             sk {String(a.session_key).slice(7, 17)}…
                           </span>
                         ) : null}
-                        {a.proxy ? (
-                          <Badge variant="outline" className="rounded-full px-1.5 text-[11px]">代理</Badge>
-                        ) : null}
+                        <ProxyBadge acct={a} proxyById={proxyById} />
                       </span>
                     </span>
                     <span className="flex shrink-0 gap-1.5">
@@ -778,6 +849,8 @@ export default function Accounts({ attach, running, navigate }) {
                         setForm={setEditForm}
                         disabled={saving}
                         idPrefix={`edit-${a.email}`}
+                        proxies={proxies}
+                        legacyProxy={a.proxy || ""}
                       />
                       {a.access_token && (
                         <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-2.5 text-xs">
@@ -854,6 +927,32 @@ export default function Accounts({ attach, running, navigate }) {
             >
               删除
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={!!batchProxy}
+        onOpenChange={(o) => !o && !batchProxy?.busy && setBatchProxy(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>批量设置代理</AlertDialogTitle>
+            <AlertDialogDescription>
+              为所选的 {batchProxy?.emails.length || 0} 个账号更换代理。账号代理只能从代理池中选择。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ProxySelect
+            id="batch-proxy"
+            value={batchProxy?.proxyId ?? ""}
+            proxies={proxies}
+            disabled={batchProxy?.busy}
+            onChange={(v) => setBatchProxy((s) => ({ ...s, proxyId: v }))}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchProxy?.busy}>取消</AlertDialogCancel>
+            <Button onClick={confirmBatchProxy} disabled={batchProxy?.busy}>
+              <Globe /> {batchProxy?.busy ? "保存中…" : "确定"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
