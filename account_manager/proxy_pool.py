@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 import httpx
 
-from claude_register.console import log
-from claude_register.xui import XuiClient, XuiError
+from account_manager.console import log
+from account_manager.xui import XuiClient, XuiError
 
 _DAY_MS = 86_400 * 1_000
 _PORT_TRIES = 8  # 同一节点内换端口重试次数（撞端口用）

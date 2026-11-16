@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from claude_register.anymail import extract_magic_link
+from account_manager.anymail import extract_magic_link
 
 LATEST = "https://mail.test/api/emails/latest"
 
@@ -62,13 +62,13 @@ def test_extract_ignores_other_claude_urls():
 
 def test_extract_recipient_from_link():
     """base64 尾巴解出收件邮箱——用来确认没抓错邮件。"""
-    from claude_register.anymail import magic_link_recipient
+    from account_manager.anymail import magic_link_recipient
 
     assert magic_link_recipient(REAL_LINK) == "claude_aafdbe25@ckvlhj.xyz"
 
 
 def test_extract_recipient_handles_garbage():
-    from claude_register.anymail import magic_link_recipient
+    from account_manager.anymail import magic_link_recipient
 
     assert magic_link_recipient("https://claude.ai/magic-link#abc") is None
 

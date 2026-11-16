@@ -22,7 +22,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/yiranxiaohui/claude-register
+          images: ghcr.io/yiranxiaohui/account-manager
           tags: |
             type=raw,value=latest
             type=sha,format=long,prefix=

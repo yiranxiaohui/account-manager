@@ -18,8 +18,8 @@ from uuid import uuid4
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 
-from claude_register.console import log
-from claude_register.oauth import OAuthError
+from account_manager.console import log
+from account_manager.oauth import OAuthError
 from server import db, oauth_acquire, oauth_import, oauth_import_settings
 
 PLATFORM = "anthropic"
@@ -277,7 +277,7 @@ def register_sub2api_routes(app: FastAPI, state, *, require_auth) -> None:
                 raise HTTPException(status_code=413, detail="上传内容不能超过 10 MB，请分批选择文件")
             content.extend(chunk)
         try:
-            if request.headers.get("content-type", "").split(";")[0].strip().lower() == oauth_import.BATCH_CONTENT_TYPE:
+            if request.headers.get("content-type", "").split(";")[0].strip().lower() in oauth_import.BATCH_CONTENT_TYPES:
                 payload, files, settings = oauth_import.parse_files(bytes(content))
                 if settings is not None:
                     payload = oauth_import_settings.apply_settings(payload, settings)

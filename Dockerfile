@@ -43,14 +43,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN uv run --no-sync playwright install --with-deps --no-shell chromium && \
     rm -rf /var/lib/apt/lists/*
-COPY claude_register/ ./claude_register/
+COPY account_manager/ ./account_manager/
 COPY server/ ./server/
 COPY serve.py main.py README.md ./
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
-COPY deploy/supervisord.conf /etc/supervisor/conf.d/claude-register.conf
+COPY deploy/supervisord.conf /etc/supervisor/conf.d/account-manager.conf
 RUN nginx -t
 RUN uv sync --frozen --no-dev
 COPY --from=web /web/dist ./web/dist
-ENV CLAUDE_REGISTER_INTERNAL_PORT=8791
+ENV ACCOUNT_MANAGER_INTERNAL_PORT=8791
 EXPOSE 8790
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/claude-register.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/account-manager.conf"]

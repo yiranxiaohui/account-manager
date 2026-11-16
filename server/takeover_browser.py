@@ -10,8 +10,8 @@ import time
 
 from playwright.sync_api import Error as PlaywrightError
 
-from claude_register.anymail import AnyMailClient
-from claude_register.browser import (
+from account_manager.anymail import AnyMailClient
+from account_manager.browser import (
     BROWSER_INSTALL_HINT,
     TAKEOVER_DENY_HOSTS,
     URL as LOGIN_URL,
@@ -28,9 +28,9 @@ from claude_register.browser import (
     wait_for_session_key,
     wait_login_form,
 )
-from claude_register.console import log
-from claude_register.flow import _split_login_timeout
-from claude_register.mailbox import utc_now_iso
+from account_manager.console import log
+from account_manager.flow import _split_login_timeout
+from account_manager.mailbox import utc_now_iso
 
 
 # 接管中继的并发上限可独立配置；实际容量需按上游节点验证。

@@ -43,7 +43,7 @@ def test_runtime_uses_supervisor_for_panel_and_nginx():
 
     assert "nginx" in dockerfile
     assert "supervisor" in dockerfile
-    assert "CLAUDE_REGISTER_INTERNAL_PORT=8791" in dockerfile
+    assert "ACCOUNT_MANAGER_INTERNAL_PORT=8791" in dockerfile
     assert "[program:panel]" in supervisor
     assert "[program:nginx]" in supervisor
 

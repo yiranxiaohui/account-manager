@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from claude_register import socks_relay as sr
+from account_manager import socks_relay as sr
 
 
 def recv_exact(sock, n):

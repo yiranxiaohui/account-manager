@@ -5,13 +5,13 @@ import random
 import httpx
 import pytest
 
-from claude_register.proxy_pool import (
+from account_manager.proxy_pool import (
     ProvisionedProxy,
     ProxyPool,
     ProxyPoolError,
     XuiNode,
 )
-from claude_register.xui import XuiError
+from account_manager.xui import XuiError
 
 
 class FakeXui:

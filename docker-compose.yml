@@ -1,6 +1,6 @@
 services:
-  claude-register:
-    image: ghcr.io/yiranxiaohui/claude-register:latest
+  account-manager:
+    image: ghcr.io/yiranxiaohui/account-manager:latest
     restart: unless-stopped
     ports: ["8790:8790"]
     volumes:

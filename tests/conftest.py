@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from claude_register import anymail
+from account_manager import anymail
 
 BASE_URL = "https://mail.test"
 
@@ -27,7 +27,7 @@ def client():
 @pytest.fixture(autouse=True)
 def _no_timezone_lookup(monkeypatch):
     """出口时区查询会真的联网（经代理），测试里一律视为查不到。"""
-    from claude_register import browser
+    from account_manager import browser
 
     monkeypatch.setattr(browser, "lookup_timezone", lambda *a, **k: None)
 
@@ -60,7 +60,7 @@ class FakeVirtualDisplay:
 @pytest.fixture
 def fake_chromium(monkeypatch):
     """替换 launch_chromium / VirtualDisplay，记录启动参数；不拉起真实浏览器。"""
-    from claude_register import browser
+    from account_manager import browser
 
     seen: dict = {}
 

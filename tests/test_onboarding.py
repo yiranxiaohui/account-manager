@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from claude_register import browser
+from account_manager import browser
 
 
 class _Loc:

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-import claude_register.browser as browser_mod
+import account_manager.browser as browser_mod
 from server import takeover_browser
 
 

@@ -15,8 +15,8 @@ import time
 
 import pytest
 
-from claude_register import socks_relay
-from claude_register.socks_relay import SocksRelay
+from account_manager import socks_relay
+from account_manager.socks_relay import SocksRelay
 
 USER_PASS = 0x02
 

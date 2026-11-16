@@ -49,7 +49,7 @@ def test_start_run_busy_returns_409(tmp_path, monkeypatch):
     c = _client(tmp_path)
     c.post("/api/login", json={"password": "pw"})
 
-    import claude_register.flow as flow
+    import account_manager.flow as flow
 
     monkeypatch.setattr(flow, "run", lambda **kw: time.sleep(0.5))
 
@@ -75,8 +75,8 @@ def test_stream_no_duplicate_lines(tmp_path, monkeypatch):
     c = _client(tmp_path)
     c.post("/api/login", json={"password": "pw"})
 
-    import claude_register.flow as flow
-    from claude_register import console
+    import account_manager.flow as flow
+    from account_manager import console
 
     def fake_flow(**kw):
         console.log("LINE_ONE")
@@ -111,8 +111,8 @@ def test_stream_active_run_no_duplicate_over_http(tmp_path, monkeypatch):
     c = _client(tmp_path)
     c.post("/api/login", json={"password": "pw"})
 
-    import claude_register.flow as flow
-    from claude_register import console
+    import account_manager.flow as flow
+    from account_manager import console
 
     release = threading.Event()
 
@@ -248,7 +248,7 @@ def test_xui_test_endpoint_ok(tmp_path, monkeypatch):
 
 def test_xui_test_endpoint_reports_failure(tmp_path, monkeypatch):
     import server.app as appmod
-    from claude_register.xui import XuiError
+    from account_manager.xui import XuiError
 
     class FakeXui:
         def __init__(self, *a, **k): ...

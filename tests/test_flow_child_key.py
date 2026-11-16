@@ -6,7 +6,7 @@ import inspect
 
 import pytest
 
-from claude_register import anymail, flow
+from account_manager import anymail, flow
 from server.config_store import Config
 
 

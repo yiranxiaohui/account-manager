@@ -20,7 +20,7 @@ DOC_PATH = Path(__file__).with_name("open_api.md")
 DOCS_MD = "/api/v1/docs.md"
 OPENAPI_JSON = "/api/v1/openapi.json"
 SWAGGER = "/api/v1/docs"
-API_TITLE = "claude-register 开放 API"
+API_TITLE = "account-manager 开放 API"
 API_VERSION = "1.0.0"
 
 # Host 只允许主机名/IP/端口字符，防止伪造 Host 头往文档里注入内容。
@@ -67,7 +67,7 @@ def render_markdown(base: str, max_wait: int) -> str:
 
 def render_llms_txt(base: str) -> str:
     return (
-        "# claude-register\n\n"
+        "# account-manager\n\n"
         "> 自动注册 claude.ai 账号的服务。开放 API 可触发自动注册、查询结果，"
         "并按需选择字段导出账号信息（邮箱、sessionKey、代理、密码等）。"
         "调用需要 API Key（Authorization: Bearer <key>）。\n\n"

@@ -86,7 +86,7 @@ def test_swagger_and_llms_txt(tmp_path):
     html = c.get("/api/v1/docs")
     assert html.status_code == 200 and "/api/v1/openapi.json" in html.text
     llms = c.get("/llms.txt", headers={"host": "10.1.42.1:8790"}).text
-    assert llms.startswith("# claude-register")
+    assert llms.startswith("# account-manager")
     assert "http://10.1.42.1:8790/api/v1/docs.md" in llms
     assert "http://10.1.42.1:8790/api/v1/openapi.json" in llms
 

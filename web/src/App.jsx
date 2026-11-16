@@ -155,7 +155,7 @@ function AppBody() {
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <div className="brand px-2 py-2 group-data-[collapsible=icon]:hidden">
-            <div className="flex items-center gap-2"><span className="brand-mark"><Sparkles className="size-4" /></span><span>claude-register</span></div>
+            <div className="flex items-center gap-2"><span className="brand-mark"><Sparkles className="size-4" /></span><span>account-manager</span></div>
             <span className="brand-subtitle">自动化注册工作台</span>
           </div>
         </SidebarHeader>

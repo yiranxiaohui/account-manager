@@ -3,8 +3,8 @@ import types
 
 import pytest
 
-from claude_register import browser, flow
-from claude_register.browser import parse_proxy
+from account_manager import browser, flow
+from account_manager.browser import parse_proxy
 
 
 def test_empty_means_direct():
@@ -148,7 +148,7 @@ def test_relay_errors_from_other_threads_reach_the_log_sink(monkeypatch, fake_ch
     """
     import threading
 
-    from claude_register import console
+    from account_manager import console
 
     captured = []
     on_errors = []
@@ -211,7 +211,7 @@ def test_relay_errors_from_concurrent_threads_all_reach_sink(monkeypatch, fake_c
     import threading
     import time
 
-    from claude_register import console
+    from account_manager import console
 
     captured = []
     lock = threading.Lock()

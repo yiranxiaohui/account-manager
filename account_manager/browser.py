@@ -16,9 +16,9 @@ from urllib.parse import unquote, urlsplit
 
 from playwright.sync_api import Page, expect, sync_playwright
 
-from claude_register.console import current_sink, log
-from claude_register.display import VirtualDisplay
-from claude_register.socks_relay import SocksRelay
+from account_manager.console import current_sink, log
+from account_manager.display import VirtualDisplay
+from account_manager.socks_relay import SocksRelay
 
 URL = "https://claude.ai/login"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -439,7 +439,7 @@ def launch_chromium(*, headless: bool, proxy: dict | None = None,
             options["proxy"] = proxy
         if proxy_pool_limits is None:
             return ChromiumSession(playwright, playwright.chromium.launch(**options))
-        profile_dir = tempfile.mkdtemp(prefix="claude-register-chromium-")
+        profile_dir = tempfile.mkdtemp(prefix="account-manager-chromium-")
         _write_proxy_pool_prefs(profile_dir, proxy_pool_limits)
         context = playwright.chromium.launch_persistent_context(
             profile_dir, **options, **CONTEXT_OPTIONS,

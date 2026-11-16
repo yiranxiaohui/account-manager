@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from claude_register.console import log
+from account_manager.console import log
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ACCOUNTS_JSONL = ROOT / "data" / "accounts.jsonl"

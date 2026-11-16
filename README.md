@@ -1,4 +1,6 @@
-# claude-register
+# account-manager
+
+> 本项目原名 `claude-register`。改名后旧部署无需手动迁移：数据目录里只有旧的 `claude-register.db` 时会继续使用它，旧环境变量 `CLAUDE_REGISTER_INTERNAL_PORT` 与旧的批量导入 content-type 仍然兼容。
 
 选一个邮箱后缀，系统自动建邮箱、打开 Claude 登录页填入，并自动收取登录邮件完成登录。
 
@@ -32,7 +34,7 @@ docker compose up -d
 
 3. 浏览器打开 `http://<部署机器 IP>:8790`，用 `config.yaml` 里的 `panel.password` 登录
 
-`docker-compose.yml` 默认把 `./data`（sqlite + 运行记录）和 `./config.yaml` 挂进容器；镜像由 CI（`.github/workflows/build.yml`，跑在 self-hosted runner 上）构建推送到 `ghcr.io/yiranxiaohui/claude-register`，**部署机器只 `pull`，不在本地跑 `docker build`**。
+`docker-compose.yml` 默认把 `./data`（sqlite + 运行记录）和 `./config.yaml` 挂进容器；镜像由 CI（`.github/workflows/build.yml`，跑在 self-hosted runner 上）构建推送到 `ghcr.io/yiranxiaohui/account-manager`，**部署机器只 `pull`，不在本地跑 `docker build`**。
 
 面板里改的设置会写回 `config.yaml`，接口和日志里 AnyMail Key 等敏感字段做了脱敏。
 
@@ -124,7 +126,7 @@ scope 为 `user:profile user:inference user:sessions:claude_code user:mcp_server
 ### 对接 sub2api：失效账号重新授权并写回
 
 sub2api 里的 Claude OAuth 账号 refresh_token 失效（如 `invalid_grant`）后会被标成「异常」。
-只要本地还有该账号的 sessionKey，就可以在 claude-register 里重新授权并直接写回 sub2api：
+只要本地还有该账号的 sessionKey，就可以在 account-manager 里重新授权并直接写回 sub2api：
 
 1. 「系统设置 → sub2api 对接」填写 sub2api 地址（如 `http://sub2api.syixn.com:8080`）和 sub2api
    管理员 API Key（sub2api 后台 → 系统设置生成；面板只显示占位符，日志与接口不回显）。
@@ -306,7 +308,7 @@ hCaptcha 拖拽题，在没有图形界面的机器上就没法手动拖拽—�
 
 **邮箱默认永久保留。** 默认不设 `expires_at`，注册出来的账号邮箱不会被 AnyMail 的到期 cron 清掉（之后还能收改密码、设备验证等邮件）。如果想让邮箱限时自动清理，设 `ANYMAIL_EXPIRES_HOURS=<正数小时>`，到期后 AnyMail 会把邮箱连同邮件一起删除。
 
-**本工具不会自动删除邮箱。** 要清理就按 tag 批量删：`GET /api/accounts?tag=claude-register`。
+**本工具不会自动删除邮箱。** 要清理就按 tag 批量删：`GET /api/accounts?tag=account-manager`。项目改名前（claude-register）创建的邮箱 tag 仍是 `claude-register`，需要另按该 tag 清理。
 
 ## 测试
 

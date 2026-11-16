@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_ACCOUNTS = 1000
 MAX_FILES = 1000
-BATCH_CONTENT_TYPE = "application/vnd.claude-register.oauth-files+json"
+BATCH_CONTENT_TYPE = "application/vnd.account-manager.oauth-files+json"
+# 项目改名前（claude-register）的旧类型，继续接受以兼容旧客户端。
+LEGACY_BATCH_CONTENT_TYPE = "application/vnd.claude-register.oauth-files+json"
+BATCH_CONTENT_TYPES = frozenset({BATCH_CONTENT_TYPE, LEGACY_BATCH_CONTENT_TYPE})
 
 
 def _invalid_constant(_value):

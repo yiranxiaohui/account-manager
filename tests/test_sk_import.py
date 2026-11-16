@@ -5,7 +5,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 import server.app as appmod
-from claude_register.session_check import probe_session
+from account_manager.session_check import probe_session
 from server import db, sk_import
 from server.app import create_app
 from server.config_store import save_config

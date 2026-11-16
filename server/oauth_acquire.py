@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
 
-from claude_register import oauth
+from account_manager import oauth
 from server import db
 
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from claude_register.anymail import AnyMailClient, Mailbox
-from claude_register.config import resolve_expires_hours
-from claude_register.console import log
-from claude_register.console import prompt as console_prompt
+from account_manager.anymail import AnyMailClient, Mailbox
+from account_manager.config import resolve_expires_hours
+from account_manager.console import log
+from account_manager.console import prompt as console_prompt
 
 
 def utc_now_iso() -> str:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from claude_register import browser
+from account_manager import browser
 
 
 def test_linux_with_xvfb_uses_virtual(monkeypatch):
@@ -79,7 +79,7 @@ def test_real_headless_fallback(monkeypatch, fake_chromium):
 def test_startup_log_reports_actual_mode(monkeypatch, fake_chromium):
     """启动日志不能写死「headless=virtual」——Windows 上那是句假话，
     排查问题时会把人带偏。"""
-    from claude_register import console
+    from account_manager import console
 
     monkeypatch.setattr(browser, "pick_headless", lambda: False)
     captured: list[str] = []

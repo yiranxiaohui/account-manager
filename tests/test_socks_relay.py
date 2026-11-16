@@ -16,7 +16,7 @@ import threading
 
 import pytest
 
-from claude_register.socks_relay import SocksRelay
+from account_manager.socks_relay import SocksRelay
 
 NO_AUTH = 0x00
 USER_PASS = 0x02
@@ -311,7 +311,7 @@ def test_retry_budget_stays_under_navigation_timeout():
     否则上游 hang 住时，浏览器会先一步超时——用户看到的仍是
     NS_ERROR_NET_TIMEOUT，而真正有用的中继报错要等更久才出现。
     """
-    from claude_register import socks_relay as sr
+    from account_manager import socks_relay as sr
 
     assert sr.RETRY_DEADLINE < 30.0, "重试预算必须远小于 60s 导航超时"
 

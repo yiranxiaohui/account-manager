@@ -14,9 +14,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from claude_register import socks_relay
-from claude_register.browser import browser_proxy_pool_limits, launch_chromium
-from claude_register.socks_relay import SocksRelay, _pipe, _recv_exactly
+from account_manager import socks_relay
+from account_manager.browser import browser_proxy_pool_limits, launch_chromium
+from account_manager.socks_relay import SocksRelay, _pipe, _recv_exactly
 
 RELAY_SLOTS = 8
 SITES = 14

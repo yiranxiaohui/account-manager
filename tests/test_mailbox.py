@@ -9,8 +9,8 @@ import httpx
 import pytest
 import respx
 
-from claude_register import mailbox
-from claude_register.mailbox import (
+from account_manager import mailbox
+from account_manager.mailbox import (
     choose_suffix,
     create_for_suffix,
     prepare_mailbox,
@@ -151,7 +151,7 @@ def test_create_for_suffix_retries_on_conflict(client):
 
 
 def test_random_local_is_pure_letters_and_random():
-    from claude_register.anymail import random_local
+    from account_manager.anymail import random_local
 
     a, b = random_local(), random_local()
     assert re.fullmatch(r"[a-z]{8,}", a)

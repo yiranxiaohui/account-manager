@@ -1,7 +1,7 @@
 import inspect
 
-from claude_register import browser, flow, mailbox
-from claude_register.anymail import AnyMailClient
+from account_manager import browser, flow, mailbox
+from account_manager.anymail import AnyMailClient
 
 
 def test_flow_run_accepts_config():

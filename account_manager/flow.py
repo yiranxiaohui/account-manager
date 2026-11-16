@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from claude_register.anymail import AnyMailClient, Mailbox, load_dotenv
-from claude_register.accounts import AccountRecord, save_account_record
-from claude_register.browser import (
+from account_manager.anymail import AnyMailClient, Mailbox, load_dotenv
+from account_manager.accounts import AccountRecord, save_account_record
+from account_manager.browser import (
     _output_dir,
     browser_session,
     default_display_name,
@@ -23,9 +23,9 @@ from claude_register.browser import (
 )
 from typing import TYPE_CHECKING
 
-from claude_register.console import banner, log
-from claude_register.mailbox import prepare_mailbox
-from claude_register.proxy_pool import ProvisionedProxy, ProxyPool, XuiNode
+from account_manager.console import banner, log
+from account_manager.mailbox import prepare_mailbox
+from account_manager.proxy_pool import ProvisionedProxy, ProxyPool, XuiNode
 
 if TYPE_CHECKING:
     from server.config_store import Config

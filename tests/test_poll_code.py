@@ -6,8 +6,8 @@ import httpx
 import pytest
 import respx
 
-from claude_register.anymail import AnyMailAccessError, extract_code
-from claude_register.config import DEFAULT_CODE_REGEX, FALLBACK_CODE_REGEX
+from account_manager.anymail import AnyMailAccessError, extract_code
+from account_manager.config import DEFAULT_CODE_REGEX, FALLBACK_CODE_REGEX
 
 LATEST = "https://mail.test/api/emails/latest"
 

@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from server import auth, db, export, oauth_acquire, open_api_docs
-from claude_register.oauth import OAuthError
+from account_manager.oauth import OAuthError
 from server.runner import RunnerBusy
 
 # 长轮询上限：容器内 Nginx 对 / 的默认读超时是 60s，留足余量。

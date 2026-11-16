@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import httpx
 
-from claude_register.session_check import _default_client, check_session
+from account_manager.session_check import _default_client, check_session
 
 ORG_URL = "https://claude.ai/api/organizations"
 
@@ -121,7 +121,7 @@ def test_default_client_auth_socks_goes_through_relay():
 
 
 def test_default_client_uses_browser_impersonation():
-    from claude_register import session_check
+    from account_manager import session_check
 
     assert session_check.IMPERSONATE
     # 手写 UA 会跟模拟出的 TLS 指纹对不上，必须交给 impersonate

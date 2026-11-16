@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from claude_register.xui import XuiClient, XuiError
+from account_manager.xui import XuiClient, XuiError
 
 BASE = "https://panel.test:2053/secretpath"
 

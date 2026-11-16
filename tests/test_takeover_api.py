@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from claude_register.anymail import AnyMailAccessError, ChildKey
+from account_manager.anymail import AnyMailAccessError, ChildKey
 from server.app import create_app
 from server.config_store import save_config
 from server import db
@@ -86,7 +86,7 @@ def _seed_account(
     mail_key="",
     mail_base_url="",
 ):
-    conn = db.init_db(tmp_path / "claude-register.db")
+    conn = db.init_db(tmp_path / "account-manager.db")
     db.upsert_account(conn, email, "x.com", None, "", None, "success",
                       session_key=session_key, proxy=proxy, created_at="t",
                       mail_key=mail_key, mail_base_url=mail_base_url)
@@ -215,7 +215,7 @@ def test_takeover_relogin_repairs_invalid_child_key_permanently(tmp_path, monkey
     assert app.state.mail_control["creates"] == [{
         "email": "a@x.com",
         "expires_at": None,
-        "name_prefix": "claude-register-relogin",
+        "name_prefix": "account-manager-relogin",
     }]
     call = app.state.cr.takeover.relogin_calls[0]
     assert call["mail_api_key"] == "ak_repaired"

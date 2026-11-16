@@ -1,5 +1,5 @@
 {
-  "name": "claude-register-web",
+  "name": "account-manager-web",
   "private": true,
   "type": "module",
   "scripts": {

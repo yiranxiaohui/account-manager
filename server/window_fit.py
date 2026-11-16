@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 
-from claude_register import console
+from account_manager import console
 
 POLL_INTERVAL = 0.3
 # Xvfb 启动时的 -screen 尺寸（见 takeover.py）。Xpra 客户端连上之前根窗口就是

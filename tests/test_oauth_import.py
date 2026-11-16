@@ -212,6 +212,16 @@ def test_multiple_files_preview_and_single_import_request(env):
     assert not db.list_accounts(app.state.cr.conn)
 
 
+def test_legacy_batch_content_type_still_accepted(env):
+    c, calls, _app = env
+    headers = {"content-type": oauth_import.LEGACY_BATCH_CONTENT_TYPE}
+    source = _batch(("first.json", json.dumps(SOURCE)), ("second.json", json.dumps(SOURCE)))
+    r = c.post("/api/sub2api/import/preview", json=source, headers=headers)
+    assert r.status_code == 200
+    assert [f["name"] for f in r.json()["files"]] == ["first.json", "second.json"]
+    assert not calls
+
+
 @pytest.mark.parametrize("path", ["/api/sub2api/import/preview", "/api/sub2api/import"])
 def test_bad_second_file_blocks_entire_batch(env, path):
     c, calls, _ = env

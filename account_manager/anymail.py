@@ -22,12 +22,12 @@ from urllib.parse import urlparse
 
 import httpx
 
-from claude_register.config import (
+from account_manager.config import (
     FALLBACK_CODE_REGEX,
     MAGIC_LINK_REGEX,
     resolve_code_regex,
 )
-from claude_register.console import log
+from account_manager.console import log
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -278,7 +278,7 @@ class AnyMailClient:
         email: str,
         *,
         expires_hours: float | None = None,
-        tag: str | None = "claude-register",
+        tag: str | None = "account-manager",
     ) -> Mailbox:
         """按完整邮箱地址选用已有账号；不存在则创建。"""
         target = email.strip().lower()
@@ -304,7 +304,7 @@ class AnyMailClient:
         local_part: str | None = None,
         domain: str | None = None,
         expires_hours: float | None = None,
-        tag: str | None = "claude-register",
+        tag: str | None = "account-manager",
     ) -> Mailbox:
         """POST /api/accounts 创建临时邮箱。"""
         dom = (domain or self.domain or "").strip().lstrip("@").strip(".").lower()
@@ -518,7 +518,7 @@ class AnyMailClient:
         *,
         email: str,
         expires_at: str | None,
-        name_prefix: str = "claude-register",
+        name_prefix: str = "account-manager",
     ) -> ChildKey | None:
         """POST /api/keys 派生仅 emails:read、锁定 email、随邮箱过期的子 key。
 

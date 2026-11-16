@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from curl_cffi import requests as cffi_requests
 
-from claude_register.browser import mask_proxy, needs_relay, normalize_proxy_url, parse_proxy
-from claude_register.socks_relay import SocksRelay
+from account_manager.browser import mask_proxy, needs_relay, normalize_proxy_url, parse_proxy
+from account_manager.socks_relay import SocksRelay
 
 ORG_URL = "https://claude.ai/api/organizations"
 ACCOUNT_URL = "https://claude.ai/api/account"

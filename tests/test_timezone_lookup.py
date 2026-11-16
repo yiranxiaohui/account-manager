@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from curl_cffi import requests as cffi_requests
 
-from claude_register import browser
+from account_manager import browser
 
 # conftest 的 autouse fixture 会把 browser.lookup_timezone 换成假实现；
 # 模块导入发生在 fixture 之前，这里拿到的是真函数。

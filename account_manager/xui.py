@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from claude_register.console import log
+from account_manager.console import log
 
 # mixed inbound 的固定 sniffing/allocate；socks 场景用不到，给合法空值即可。
 _SNIFFING = json.dumps({"enabled": False, "destOverride": []})

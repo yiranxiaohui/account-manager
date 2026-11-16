@@ -6,8 +6,8 @@ import shutil
 
 import pytest
 
-from claude_register import display as display_mod
-from claude_register.display import DISPLAY_RANGE, VirtualDisplay
+from account_manager import display as display_mod
+from account_manager.display import DISPLAY_RANGE, VirtualDisplay
 
 
 class FakeProc:

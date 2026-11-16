@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from claude_register.console import log
+from account_manager.console import log
 from server.config_store import load_config, save_config
 
 LEGACY_XRAY_PROXY = "socks5h://127.0.0.1:10808"

@@ -167,7 +167,7 @@ def to_dict(cfg: Config) -> dict:
 
 
 def validate_saved_proxies(raw) -> tuple:
-    from claude_register.browser import validate_proxy
+    from account_manager.browser import validate_proxy
 
     if not isinstance(raw, list):
         raise ValueError("代理池必须为列表")

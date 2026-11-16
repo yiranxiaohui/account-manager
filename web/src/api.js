@@ -37,7 +37,7 @@ export async function prepareOAuthUpload(files) {
     }
   }));
   const body = new Blob([JSON.stringify({ files: entries })], {
-    type: "application/vnd.claude-register.oauth-files+json",
+    type: "application/vnd.account-manager.oauth-files+json",
   });
   if (body.size > limit) throw new Error(tooLarge);
   return { body };

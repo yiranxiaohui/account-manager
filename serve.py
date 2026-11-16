@@ -23,7 +23,8 @@ def main() -> None:
               "请尽快在设置页设定密码后再使用。", flush=True)
     # 容器内由 Nginx 统一监听面板公开端口，Uvicorn 只监听内部
     # 端口；本地直接运行时未设该变量，仍使用 config.yaml 的 panel.port。
-    internal_port = os.environ.get("CLAUDE_REGISTER_INTERNAL_PORT")
+    internal_port = (os.environ.get("ACCOUNT_MANAGER_INTERNAL_PORT")
+                     or os.environ.get("CLAUDE_REGISTER_INTERNAL_PORT"))  # 改名前的旧变量
     port = int(internal_port or cfg.panel_port)
     host = "127.0.0.1" if internal_port else "0.0.0.0"
     uvicorn.run(app, host=host, port=port)

@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from claude_register import oauth
+from account_manager import oauth
 from server import db, export, oauth_acquire, runner
 from server.app import create_app
 from server.config_store import Config, load_config, save_config
@@ -95,7 +95,7 @@ class FakeClaude:
         return httpx.Response(404)
 
 
-# ---- claude_register.oauth ----
+# ---- account_manager.oauth ----
 
 
 def test_generate_pkce_s256():

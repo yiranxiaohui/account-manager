@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from claude_register import session_check
-from claude_register.session_check import check_session
+from account_manager import session_check
+from account_manager.session_check import check_session
 from tests.test_socks_relay import FakeUpstream
 
 

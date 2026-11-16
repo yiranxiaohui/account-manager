@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "claude-register-web",
+      "name": "account-manager-web",
       "dependencies": {
         "@tailwindcss/vite": "^4.3.3",
         "class-variance-authority": "^0.7.1",

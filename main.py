@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from claude_register.flow import run
+from account_manager.flow import run
 from server.config_store import load_config
 
 

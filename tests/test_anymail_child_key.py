@@ -14,7 +14,7 @@ KEYS = "https://mail.test/api/keys"
 def _key_response(**kw) -> dict:
     base = {
         "id": "kid-1",
-        "name": "claude-register a@mail.test",
+        "name": "account-manager a@mail.test",
         "key_prefix": "ak_child12",
         "scopes": ["emails:read"],
         "provider": "domain",
@@ -39,7 +39,7 @@ def test_create_child_key_success_sends_narrowed_body(client):
     assert child.plaintext == "ak_child_secret"
 
     body = json.loads(route.calls.last.request.content)
-    assert body["name"] == "claude-register a@mail.test"
+    assert body["name"] == "account-manager a@mail.test"
     assert body["scopes"] == ["emails:read"]
     assert body["provider"] == "domain"
     assert body["address"] == "a@mail.test"  # 输入已规整为小写
@@ -96,7 +96,7 @@ def test_create_child_key_degrades_on_unexpected_exception(client, monkeypatch):
 @respx.mock
 def test_create_child_key_malformed_response_log_redacts_plaintext(client):
     """响应异形但仍带了 plaintext(比如 key.id 缺失)时,日志不能把明文子 key 打出来。"""
-    from claude_register import console
+    from account_manager import console
 
     respx.post(KEYS).mock(
         return_value=httpx.Response(

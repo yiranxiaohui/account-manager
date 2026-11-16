@@ -32,7 +32,7 @@ def _app(tmp_path, **cfg):
 @pytest.fixture
 def fake_flow(monkeypatch):
     """替换注册流程：可控地阻塞/成功/失败，不起浏览器。"""
-    import claude_register.flow as flow
+    import account_manager.flow as flow
 
     ctl = {"release": threading.Event(), "result": None, "error": None, "calls": []}
     ctl["release"].set()

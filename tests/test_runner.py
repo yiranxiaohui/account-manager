@@ -14,7 +14,7 @@ def test_start_runs_flow_and_records_success(tmp_path):
     calls = {}
 
     def fake_flow(*, email=None, domain=None, config=None, **kw):
-        from claude_register import console
+        from account_manager import console
         console.log("hi from flow")
         calls["email"] = email
         return {

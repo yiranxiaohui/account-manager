@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from claude_register.console import log
+from account_manager.console import log
 
 # 主正则用捕获组定位真正的码，避开邮件里的日期数字（接码文档 §8.4）；
 # 同时要求 6 位数字前面不是 #，避开邮件 HTML 里跨行/跨标签出现在 "code" 后面的

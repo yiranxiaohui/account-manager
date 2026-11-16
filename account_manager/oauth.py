@@ -23,8 +23,8 @@ import time
 from dataclasses import asdict, dataclass
 from urllib.parse import parse_qs, urlsplit
 
-from claude_register.browser import mask_proxy, normalize_proxy_url
-from claude_register.session_check import _default_client, _looks_like_shield
+from account_manager.browser import mask_proxy, normalize_proxy_url
+from account_manager.session_check import _default_client, _looks_like_shield
 
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 REDIRECT_URI = "https://platform.claude.com/oauth/code/callback"

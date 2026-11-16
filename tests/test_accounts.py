@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from claude_register.accounts import AccountRecord, save_account_record
-from claude_register import browser
+from account_manager.accounts import AccountRecord, save_account_record
+from account_manager import browser
 
 
 class _Ctx:

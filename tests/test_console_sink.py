@@ -1,4 +1,4 @@
-from claude_register import console
+from account_manager import console
 
 
 def test_log_prints_when_no_sink(capsys):

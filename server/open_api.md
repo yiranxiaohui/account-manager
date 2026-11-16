@@ -1,10 +1,10 @@
-# claude-register 开放 API 文档
+# account-manager 开放 API 文档
 
 > 本文档可被 AI / 脚本直接读取：`GET {{BASE_URL}}/api/v1/docs.md`（Markdown）、
 > `GET {{BASE_URL}}/api/v1/openapi.json`（OpenAPI 3）、在线调试页 `{{BASE_URL}}/api/v1/docs`。
 > 文档本身无需鉴权，调用接口需要 API Key。
 
-claude-register 是一个自动注册 claude.ai 账号的服务。开放 API 让外部程序：
+account-manager 是一个自动注册 claude.ai 账号的服务。开放 API 让外部程序：
 
 1. **触发一次自动注册**（后台运行，通常需要 1–5 分钟）；
 2. **查询注册结果**，成功后按需选择返回哪些账号信息；

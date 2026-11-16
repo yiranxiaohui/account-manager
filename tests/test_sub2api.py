@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from claude_register import oauth
+from account_manager import oauth
 from server import db, sub2api
 from server.app import create_app
 from server.config_store import REDACTED, load_config, save_config

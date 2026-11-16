@@ -5,9 +5,9 @@ import queue
 import threading
 from pathlib import Path
 
-from claude_register import browser
-from claude_register import console
-from claude_register import flow as flow_module
+from account_manager import browser
+from account_manager import console
+from account_manager import flow as flow_module
 from server import db
 
 
@@ -59,7 +59,7 @@ class Runner:
 
     def _auto_oauth(self, email: str, sink) -> None:
         """注册成功后自动获取 OAuth 令牌；失败只记日志，不影响注册结果。"""
-        from claude_register.oauth import OAuthError
+        from account_manager.oauth import OAuthError
         from server import oauth_acquire
 
         sink("正在用 sessionKey 获取 Claude OAuth 令牌…")

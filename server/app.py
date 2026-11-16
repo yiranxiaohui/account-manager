@@ -13,14 +13,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
-from claude_register import flow
-from claude_register.accounts import AccountRecord
-from claude_register.anymail import AnyMailAccessError, AnyMailClient
-from claude_register.console import log
-from claude_register.oauth import OAuthError
-from claude_register.proxy_pool import ProxyPool, XuiNode
-from claude_register.session_check import check_session, probe_session
-from claude_register.xui import XuiClient
+from account_manager import flow
+from account_manager.accounts import AccountRecord
+from account_manager.anymail import AnyMailAccessError, AnyMailClient
+from account_manager.console import log
+from account_manager.oauth import OAuthError
+from account_manager.proxy_pool import ProxyPool, XuiNode
+from account_manager.session_check import check_session, probe_session
+from account_manager.xui import XuiClient
 from server import auth, db, export, oauth_acquire, open_api, sk_import, sub2api
 from server.config_store import save_config, to_dict
 from server.deps import AppState, default_now
@@ -155,7 +155,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         selected = next((p for p in cfg.saved_proxies if p["id"] == proxy_id), None)
         if selected is None:
             raise HTTPException(status_code=400, detail="所选代理不存在，请刷新代理列表")
-        from claude_register.browser import validate_proxy
+        from account_manager.browser import validate_proxy
         try:
             validate_proxy(selected["url"])
         except ValueError:
@@ -699,7 +699,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
                     main_client.create_child_key,
                     email=email,
                     expires_at=None,
-                    name_prefix="claude-register-relogin",
+                    name_prefix="account-manager-relogin",
                 )
                 if child is not None:
                     mail_api_key = child.plaintext

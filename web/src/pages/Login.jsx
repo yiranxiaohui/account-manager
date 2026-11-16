@@ -31,7 +31,7 @@ export default function Login({ onOk }) {
     <div className="flex min-h-screen items-center justify-center p-6">
       <Card className="w-80">
         <CardHeader className="text-center">
-          <CardTitle className="text-xl">claude-register</CardTitle>
+          <CardTitle className="text-xl">account-manager</CardTitle>
           <p className="text-sm text-muted-foreground">管理面板登录</p>
         </CardHeader>
         <CardContent>

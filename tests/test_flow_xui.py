@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from claude_register import anymail, flow
-from claude_register.proxy_pool import ProvisionedProxy
+from account_manager import anymail, flow
+from account_manager.proxy_pool import ProvisionedProxy
 from server.config_store import Config
 
 

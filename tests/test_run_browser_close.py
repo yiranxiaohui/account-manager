@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from claude_register import flow
-from claude_register.anymail import AnyMailClient, Mailbox
+from account_manager import flow
+from account_manager.anymail import AnyMailClient, Mailbox
 
 
 def _client() -> AnyMailClient:
