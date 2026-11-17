@@ -11,6 +11,8 @@ BATCH_CONTENT_TYPE = "application/vnd.account-manager.oauth-files+json"
 # 项目改名前（claude-register）的旧类型，继续接受以兼容旧客户端。
 LEGACY_BATCH_CONTENT_TYPE = "application/vnd.claude-register.oauth-files+json"
 BATCH_CONTENT_TYPES = frozenset({BATCH_CONTENT_TYPE, LEGACY_BATCH_CONTENT_TYPE})
+# Sub2API 的 Anthropic 账号类型：oauth（完整授权）与 setup-token（长期有效，仅推理 scope）。
+ACCOUNT_TYPES = ("oauth", "setup-token")
 
 
 def _invalid_constant(_value):
@@ -135,14 +137,15 @@ def convert(source, default_name="claude-oauth") -> dict:
         if not isinstance(credentials, dict) or not isinstance(credentials.get("access_token"), str) \
                 or not credentials["access_token"].strip():
             raise ValueError(f"{prefix}缺少有效的 credentials.access_token")
-        if entry.get("platform", "anthropic") != "anthropic" or entry.get("type", "oauth") != "oauth":
-            raise ValueError(f"{prefix}不是 Claude OAuth 账号")
+        account_type = entry.get("type", "oauth")
+        if entry.get("platform", "anthropic") != "anthropic" or account_type not in ACCOUNT_TYPES:
+            raise ValueError(f"{prefix}不是 Claude OAuth / Setup Token 账号")
         name = (entry.get("name") or entry.get("email") or credentials.get("email_address")
                 or (default_name if len(entries) == 1 else f"{default_name}-{index}"))
         if not isinstance(name, str) or not name.strip():
             raise ValueError(f"{prefix}名称无效")
         account = {
-            "name": name.strip(), "platform": "anthropic", "type": "oauth",
+            "name": name.strip(), "platform": "anthropic", "type": account_type,
             "credentials": dict(credentials),
         }
         for key, default in (("concurrency", 1), ("priority", 50)):

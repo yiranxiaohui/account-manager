@@ -58,7 +58,8 @@ def test_account_arrays_keep_credentials_and_choose_names(wrapper):
     ({"credentials": {"access_token": " "}}, "access_token"),
     ({"credentials": {"access_token": True}}, "access_token"),
     ({**SOURCE, "platform": "openai"}, "不是 Claude OAuth"),
-    ({**SOURCE, "type": "setup-token"}, "不是 Claude OAuth"),
+    ({**SOURCE, "type": "apikey"}, "不是 Claude OAuth / Setup Token"),
+    ({**SOURCE, "type": "Setup-Token"}, "不是 Claude OAuth / Setup Token"),
     ({**SOURCE, "name": " "}, "名称无效"),
     ({**SOURCE, "concurrency": True}, "concurrency"),
     ({**SOURCE, "priority": -1}, "priority"),
@@ -91,6 +92,17 @@ def test_account_limit_and_string_scopes():
     assert payload["accounts"][0]["credentials"]["scope"] == "user:profile"
 
 
+def test_setup_token_entries_keep_their_type():
+    source = [
+        {"type": "setup-token", "credentials": {"access_token": ACCESS, "scope": "user:inference"}},
+        {"type": "oauth", "credentials": {"access_token": ACCESS}},
+        {"credentials": {"access_token": ACCESS}},
+    ]
+    accounts = oauth_import.convert(source)["accounts"]
+    assert [a["type"] for a in accounts] == ["setup-token", "oauth", "oauth"]
+    assert accounts[0]["credentials"] == source[0]["credentials"]
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     save_config(tmp_path / "config.yaml", {
@@ -118,7 +130,7 @@ def test_preview_is_private_and_does_not_import(env):
     c, calls, app = env
     r = c.post("/api/sub2api/import/preview?filename=upload.json", json=SOURCE)
     assert r.status_code == 200
-    assert r.json() == {"accounts": [{"name": "upload", "concurrency": 1, "priority": 50,
+    assert r.json() == {"accounts": [{"name": "upload", "type": "oauth", "concurrency": 1, "priority": 50,
                                        "has_refresh_token": True}]}
     assert not calls and not db.list_accounts(app.state.cr.conn)
     for secret in (KEY, ACCESS, REFRESH):
@@ -136,6 +148,13 @@ def test_import_sends_converted_data_with_group_choice(env, bind):
     assert body["skip_default_group_bind"] is (not bind)
     assert body["data"]["accounts"][0]["credentials"]["expires_at"] == "1794000000"
     assert not db.list_accounts(app.state.cr.conn)
+
+
+def test_legacy_import_keeps_setup_token_type(env):
+    c, calls, _ = env
+    r = c.post("/api/sub2api/import?filename=upload.json", json={**SOURCE, "type": "setup-token"})
+    assert r.status_code == 200
+    assert json.loads(calls[0].content)["data"]["accounts"][0]["type"] == "setup-token"
 
 
 @pytest.mark.parametrize("path", ["/api/sub2api/import", "/api/sub2api/import/preview"])

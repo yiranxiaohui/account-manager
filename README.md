@@ -170,11 +170,15 @@ sub2api 里的 Claude OAuth 账号 refresh_token 失效（如 `invalid_grant`）
 
 在「系统设置 → sub2api 对接」配置地址和有数据导入权限的管理员 API Key，然后打开
 「sub2api 同步 → 上传 OAuth JSON」，可同时选择多个文件，核对账号及来源文件预览后点击「确认导入 Sub2API」。
-可在确认导入前逐个修改账号名称，并为整批账号设置统一的账号名称前缀、备注、并发、优先级、计费倍率、代理、
-分组、账号到期时间、到期自动暂停及模型白名单/映射。代理和可多选的 Anthropic 分组实时读取自 Sub2API；
+可在确认导入前逐个修改账号名称，并为整批账号设置统一的账号类型、账号名称前缀、备注、并发、优先级、计费倍率、
+代理、分组、账号到期时间、到期自动暂停及模型白名单/映射。代理和可多选的 Anthropic 分组实时读取自 Sub2API；
 未选择分组时使用 Sub2API 的默认分组（如果存在），与创建账号流程一致。
 导入成功后列表自动切换到「全部」并刷新。
 
+- 账号类型与 Sub2API 创建 Anthropic 账号时的「添加方式」一致：`OAuth`（默认，完整授权，可主动查询用量）或
+  `Setup Token（长期有效）`（Sub2API 类型 `setup-token`，仅推理权限，用量来自响应头采样）。所选类型应用到整批，
+  只改变 Sub2API 账号类型，不改变凭据内容；文件中的 `type` 可以是 `oauth` 或 `setup-token`，与所选类型不同时
+  预览会提示。「sub2api 同步」列表与「重新授权」只处理 OAuth 类型账号，不包含 Setup Token 账号。
 - 支持含 `credentials.access_token` 的单账号、账号数组、`{"accounts": [...]}`，以及
   Claude Code 的 `{"claudeAiOauth": {...}}`（`accessToken`、`refreshToken`、`expiresAt`、
   `scopes` 等）。`expiresAt` 按毫秒转为秒，scopes 数组转为空格分隔的字符串。

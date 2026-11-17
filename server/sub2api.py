@@ -315,8 +315,8 @@ def register_sub2api_routes(app: FastAPI, state, *, require_auth) -> None:
     async def sub2api_import_preview(request: Request, _=Depends(require_auth)):
         payload, files, _settings = await read_import(request)
         accounts = [
-            {"name": a["name"], "concurrency": a["concurrency"], "priority": a["priority"],
-             "has_refresh_token": bool(a["credentials"].get("refresh_token"))}
+            {"name": a["name"], "type": a["type"], "concurrency": a["concurrency"],
+             "priority": a["priority"], "has_refresh_token": bool(a["credentials"].get("refresh_token"))}
             for a in payload["accounts"]
         ]
         if files:

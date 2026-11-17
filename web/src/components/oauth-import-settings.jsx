@@ -4,10 +4,21 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
+// 与 Sub2API 创建 Anthropic 账号时的「添加方式」一致。
+export const IMPORT_ACCOUNT_TYPES = [
+  ["oauth", "OAuth", "完整授权，可主动查询用量"],
+  ["setup-token", "Setup Token（长期有效）", "仅推理权限，用量来自响应头采样"],
+];
+
+export function importAccountTypeLabel(type) {
+  return IMPORT_ACCOUNT_TYPES.find(([value]) => value === type)?.[1] ?? type;
+}
 
 export function initialImportSettings() {
-  return { namePrefix: "", concurrency: "", priority: "", rate: "1", notes: "", proxyId: "", groupIds: [],
-    expiresAt: "", autoPause: true, modelMode: "keep", modelText: "" };
+  return { accountType: "oauth", namePrefix: "", concurrency: "", priority: "", rate: "1", notes: "", proxyId: "",
+    groupIds: [], expiresAt: "", autoPause: true, modelMode: "keep", modelText: "" };
 }
 
 export function prefixedImportName(name, prefix = "") {
@@ -15,6 +26,9 @@ export function prefixedImportName(name, prefix = "") {
 }
 
 export function buildImportSettings(form, names) {
+  if (!IMPORT_ACCOUNT_TYPES.some(([value]) => value === form.accountType)) {
+    throw new Error("请选择账号类型：OAuth 或 Setup Token");
+  }
   if (names.some((name) => !name.trim() || [...name.trim()].length > 100)) {
     throw new Error("每个账号名称须为 1–100 个字符");
   }
@@ -23,7 +37,8 @@ export function buildImportSettings(form, names) {
   if (names.some((name) => [...prefixedImportName(name, prefix)].length > 100)) {
     throw new Error("添加前缀后的每个账号名称最多 100 个字符，请缩短前缀或账号名称");
   }
-  const settings = { names: names.map((name) => name.trim()), name_prefix: prefix.trim(), notes: form.notes,
+  const settings = { account_type: form.accountType, names: names.map((name) => name.trim()),
+    name_prefix: prefix.trim(), notes: form.notes,
     proxy_id: form.proxyId ? Number(form.proxyId) : null, group_ids: form.groupIds,
     auto_pause_on_expired: form.autoPause, model_mode: form.modelMode };
   for (const [key, label, minimum] of [["concurrency", "并发数", 1], ["priority", "优先级", 0]]) {
@@ -67,6 +82,25 @@ export function OAuthImportSettings({ value, onChange, options, loading, error, 
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-3 rounded-lg border p-3.5 disabled:opacity-70">
       <legend className="px-1.5 font-medium">账号创建参数（应用到本批全部账号）</legend>
+      <div className="space-y-1.5">
+        <span id="oauth-account-type-label" className="font-medium">账号类型</span>
+        <RadioGroup aria-labelledby="oauth-account-type-label" aria-describedby="oauth-account-type-help"
+          className="grid gap-2 sm:grid-cols-2" value={value.accountType} onValueChange={(next) => set("accountType", next)}>
+          {IMPORT_ACCOUNT_TYPES.map(([type, label, hint]) => (
+            <label key={type} htmlFor={`oauth-account-type-${type}`}
+              className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors has-[[data-state=checked]]:border-primary/60 has-[[data-state=checked]]:bg-primary/5">
+              <RadioGroupItem id={`oauth-account-type-${type}`} value={type} className="mt-0.5" />
+              <span className="space-y-0.5">
+                <span className="block font-medium">{label}</span>
+                <span className="block text-xs text-muted-foreground">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+        <p id="oauth-account-type-help" className="text-xs text-muted-foreground">
+          与 Sub2API 创建 Anthropic 账号的「添加方式」相同，整批按所选类型创建，凭据内容不变。
+        </p>
+      </div>
       <div className="space-y-1.5">
         <Label htmlFor="oauth-name-prefix">账号名称前缀</Label>
         <Input id="oauth-name-prefix" maxLength={100} value={value.namePrefix} placeholder="可选，例如 batch-"

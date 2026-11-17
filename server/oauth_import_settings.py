@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import math
 
+from server.oauth_import import ACCOUNT_TYPES
+
 
 def _text(value, label, *, limit=100, empty=False):
     if not isinstance(value, str) or len(value) > limit or (not empty and not value.strip()):
@@ -33,10 +35,16 @@ def apply_settings(payload: dict, settings) -> dict:
     if not isinstance(settings, dict):
         raise ValueError("创建参数必须是对象")
     allowed = {"names", "name_prefix", "notes", "concurrency", "priority", "rate_multiplier", "proxy_id",
-               "group_ids", "expires_at", "auto_pause_on_expired", "model_mode", "models", "model_mapping"}
+               "group_ids", "expires_at", "auto_pause_on_expired", "model_mode", "models", "model_mapping",
+               "account_type"}
     if set(settings) - allowed:
         raise ValueError("包含不支持的创建参数")
     common = {}
+    # 账号类型与 Sub2API「添加方式」一致：缺省沿用文件（文件缺省 oauth），指定后整批统一。
+    if "account_type" in settings:
+        if settings["account_type"] not in ACCOUNT_TYPES:
+            raise ValueError("账号类型必须是 oauth 或 setup-token")
+        common["type"] = settings["account_type"]
     for key, label, minimum in (("concurrency", "并发数", 1), ("priority", "优先级", 0)):
         if key in settings:
             common[key] = _integer(settings[key], label, minimum)

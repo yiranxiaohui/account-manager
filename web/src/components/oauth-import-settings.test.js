@@ -1,5 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { buildImportSettings, initialImportSettings, prefixedImportName } from "./oauth-import-settings.jsx";
+import { buildImportSettings, importAccountTypeLabel, initialImportSettings, prefixedImportName } from "./oauth-import-settings.jsx";
+
+describe("OAuth import account type", () => {
+  test("defaults to OAuth like Sub2API's add method", () => {
+    expect(initialImportSettings().accountType).toBe("oauth");
+    expect(buildImportSettings(initialImportSettings(), ["A"]).account_type).toBe("oauth");
+  });
+
+  test("sends setup-token when selected", () => {
+    const settings = buildImportSettings({ ...initialImportSettings(), accountType: "setup-token" }, ["A"]);
+    expect(settings.account_type).toBe("setup-token");
+    expect(importAccountTypeLabel("setup-token")).toBe("Setup Token（长期有效）");
+  });
+
+  test("rejects unknown account types", () => {
+    expect(() => buildImportSettings({ ...initialImportSettings(), accountType: "apikey" }, ["A"]))
+      .toThrow("请选择账号类型");
+  });
+});
 
 describe("OAuth import name prefix", () => {
   test("defaults to no prefix and preserves existing names", () => {

@@ -149,6 +149,32 @@ def test_invalid_prefix_blocks_entire_batch(env, path, settings):
     assert "private-" not in r.text
 
 
+@pytest.mark.parametrize("account_type", ["setup-token", "oauth"])
+def test_account_type_reaches_batch_api(env, account_type):
+    c, calls, _ = env
+    source = batch({"account_type": account_type})
+    r = c.post("/api/sub2api/import/preview", json=source, headers=HEADERS)
+    assert r.status_code == 200 and not calls
+    assert [a["type"] for a in r.json()["accounts"]] == [account_type, account_type]
+    r = c.post("/api/sub2api/import", json=source, headers=HEADERS)
+    assert r.status_code == 200
+    accounts = json.loads(calls[-1].content)["accounts"]
+    assert [a["type"] for a in accounts] == [account_type, account_type]
+    assert all(a["platform"] == "anthropic" and a["credentials"] == SOURCE["credentials"] for a in accounts)
+    assert all("account_type" not in a for a in accounts)
+
+
+def test_account_type_defaults_to_file_type_and_overrides_it():
+    original = oauth_import.convert([{**SOURCE, "type": "setup-token"}, SOURCE])
+    kept = oauth_import_settings.apply_settings(original, {})
+    assert [a["type"] for a in kept["accounts"]] == ["setup-token", "oauth"]
+    unified = oauth_import_settings.apply_settings(original, {"account_type": "setup-token"})
+    assert [a["type"] for a in unified["accounts"]] == ["setup-token", "setup-token"]
+    unified = oauth_import_settings.apply_settings(original, {"account_type": "oauth"})
+    assert [a["type"] for a in unified["accounts"]] == ["oauth", "oauth"]
+    assert [a["type"] for a in original["accounts"]] == ["setup-token", "oauth"]
+
+
 def test_file_values_and_model_modes_are_preserved():
     original = oauth_import.convert({**SOURCE, "concurrency": 8, "priority": 9})
     result = oauth_import_settings.apply_settings(original, {})["accounts"][0]
@@ -173,6 +199,8 @@ def test_file_values_and_model_modes_are_preserved():
     {"model_mode": "whitelist", "models": ["claude-*"]},
     {"model_mode": "mapping", "model_mapping": {"cl*de": "claude"}},
     {"model_mode": "mapping", "model_mapping": {"claude": "claude-*"}},
+    {"account_type": "apikey"}, {"account_type": "Setup-Token"}, {"account_type": None},
+    {"account_type": ["oauth"]},
 ])
 def test_invalid_parameters_block_all_creation(env, settings):
     c, calls, _ = env

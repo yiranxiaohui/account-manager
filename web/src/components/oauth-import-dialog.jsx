@@ -6,7 +6,7 @@ import { api, prepareOAuthUpload } from "../api.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { OAuthImportSettings, initialImportSettings, buildImportSettings, prefixedImportName } from "@/components/oauth-import-settings";
+import { OAuthImportSettings, initialImportSettings, buildImportSettings, prefixedImportName, importAccountTypeLabel } from "@/components/oauth-import-settings";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -25,6 +25,8 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState("");
   const optionsRequest = useRef(0);
+  // 文件里标注的类型与所选类型不同的账号数（导入时统一按所选类型创建）。
+  const typeMismatch = preview?.accounts.filter((a) => a.type && a.type !== form.accountType) ?? [];
 
   async function loadOptions() {
     const request = ++optionsRequest.current;
@@ -105,7 +107,7 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
       setReport(result);
       if (result.created) onImported?.();
       if (result.failed) toast.error(`导入完成：成功 ${result.created} 个，失败 ${result.failed} 个`);
-      else toast.success(`已向 Sub2API 导入 ${result.created} 个账号`);
+      else toast.success(`已向 Sub2API 导入 ${result.created} 个 ${importAccountTypeLabel(settings.account_type)} 账号`);
     } catch (e) {
       if (e?.status !== 401) {
         if (e.status === 400) {
@@ -129,7 +131,8 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
           </AlertDialogTitle>
           <AlertDialogDescription>
             可同时选择多个 Claude OAuth JSON 文件，全部校验后合并导入系统设置中配置的 Sub2API。
-            支持单账号、账号数组、accounts 数组，以及 Claude Code 的 claudeAiOauth 格式。
+            支持单账号、账号数组、accounts 数组，以及 Claude Code 的 claudeAiOauth 格式；{""}
+            可选择以 OAuth 或 Setup Token（长期有效）类型创建。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-4 text-sm">
@@ -151,7 +154,16 @@ export function OAuthImportDialog({ open, onOpenChange, onImported }) {
             error={optionsError} onReload={loadOptions} disabled={!!busy || attempted} />
           {preview && (
             <div className="space-y-2">
-              <p>已选择 {preview.files?.length || 1} 个文件，已识别 {preview.accounts.length} 个 Claude OAuth 账号</p>
+              <p>
+                已选择 {preview.files?.length || 1} 个文件，已识别 {preview.accounts.length} 个 Claude 账号，将按
+                <span className="font-medium"> {importAccountTypeLabel(form.accountType)} </span>类型创建
+              </p>
+              {typeMismatch.length > 0 && (
+                <p className="text-xs text-warning">
+                  {`其中 ${typeMismatch.length} 个账号在文件中标记为 ${[...new Set(typeMismatch.map((a) => importAccountTypeLabel(a.type)))].join("、")}，`
+                    + "将统一按所选类型创建；如需保持原类型，请在上方「账号类型」中切换。"}
+                </p>
+              )}
               <div className="max-h-52 overflow-auto rounded-lg ring-1 ring-foreground/10">
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
