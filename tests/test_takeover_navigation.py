@@ -36,6 +36,7 @@ def takeover(monkeypatch):
         launcher=launcher,
         wait_display_fn=lambda display: None,
         wait_web_fn=lambda host, port: None,
+        clear_display_fn=lambda display: None,
         window_fitter_fn=lambda display: Mock(),
     )
     yield SimpleNamespace(
@@ -72,7 +73,8 @@ def test_navigation_failure_keeps_takeover_running(takeover, mode, error_type, m
     takeover.manager.stop()
     takeover.session.close.assert_called_once()
     takeover.relay.stop.assert_called_once()
-    takeover.launcher.spawn.return_value.terminate.assert_called_once()
+    # Xvfb 与 Selkies 各结束一次（Mock 启动器两次返回同一个进程对象）。
+    assert takeover.launcher.spawn.return_value.terminate.call_count == 2
 
 
 @pytest.mark.parametrize("failure", ["cookies", "page_closed", "browser_disconnected"])
@@ -93,7 +95,8 @@ def test_unusable_browser_still_fails_and_cleans_up(takeover, failure):
     assert takeover.manager.status()["running"] is False
     takeover.session.close.assert_called_once()
     takeover.relay.stop.assert_called_once()
-    takeover.launcher.spawn.return_value.terminate.assert_called_once()
+    # Xvfb 与 Selkies 各结束一次（Mock 启动器两次返回同一个进程对象）。
+    assert takeover.launcher.spawn.return_value.terminate.call_count == 2
 
 
 def test_manual_login_prefills_email_after_successful_navigation(takeover):

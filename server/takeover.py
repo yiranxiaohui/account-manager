@@ -1,22 +1,96 @@
-"""接管会话：注入 sessionKey 的已登录 claude.ai 浏览器 + Xpra，供网页接管。
+"""接管会话：注入 sessionKey 的已登录 claude.ai 浏览器 + Selkies，供网页接管。
 
 与注册流程（server/runner.py）平级、各用各的屏：注册自管 :110 起的 Xvfb
-（account_manager/display.py），接管用 Xpra start-desktop 管理独立的 :100 虚拟桌面，并直接提供 HTML5
-客户端和 WebSocket 传输。Xpra 客户端支持自动重连和双向系统剪贴板同步。
-单例：同一时刻只允许一个接管会话。
+（account_manager/display.py），接管自管 :100 的 Xvfb，再由 Selkies 把这块屏以
+H.264 视频流经 WebSocket 推给网页客户端。Selkies 按网页窗口实时调整屏幕分辨率，
+支持双向剪贴板，客户端断线自动重连。单例：同一时刻只允许一个接管会话。
 
 两种模式：``account`` 注入已有账号的 sessionKey 打开已登录页面；``manual``
 不注入 Cookie、直接打开登录页，由用户在接管画面里手动登录任意邮箱，之后
-面板轮询 ``read_session_key`` 把新 Cookie 取出入库。Xpra 只绑 localhost，不对外暴露端口，
+面板轮询 ``read_session_key`` 把新 Cookie 取出入库。Selkies 只绑 localhost，不对外暴露端口，
 由同容器 Nginx 反代，并通过 FastAPI auth_request 复用面板鉴权。
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from account_manager import console
+
+# Selkies 装在镜像的独立 venv 里（见 Dockerfile），可用该变量指定可执行文件。
+SELKIES_BIN_ENV = "ACCOUNT_MANAGER_SELKIES_BIN"
+# 与 server/window_fit.py 的 XVFB_MAX 保持一致：这是屏幕可调整的上限，
+# 客户端连上后 Selkies 会经 RandR 把屏幕调到网页窗口的实际尺寸。
+XVFB_SCREEN = "8192x4096x24"
+# Selkies 启动要加载 Python 依赖和编码器，慢机器上需要多等一会儿。
+SELKIES_READY_TIMEOUT_S = 30.0
+
+
+def xvfb_argv(display: str) -> list[str]:
+    """接管虚拟屏：只开本地 UNIX socket；浏览器由本进程创建，因此关闭 Xauthority 校验。"""
+    return [
+        "Xvfb", display,
+        "-screen", "0", XVFB_SCREEN,
+        "-nolisten", "tcp", "-noreset", "-ac", "-dpi", "96",
+        "+extension", "GLX", "+extension", "Composite",
+    ]
+
+
+def selkies_bin() -> str:
+    return os.environ.get(SELKIES_BIN_ENV) or "selkies"
+
+
+def selkies_argv(port: int) -> list[str]:
+    """Selkies 只做「把这块屏推给网页」：
+
+    - 只绑 127.0.0.1，路径前缀 /vnc，外层 Nginx + 面板 Cookie 负责鉴权，自身不再要密码；
+    - 只走 WebSocket（与面板同一个端口），不开 WebRTC/UDP；
+    - 音频、麦克风、摄像头、手柄、打印、文件传输、分享链接、副屏、命令执行等接管用不到的
+      功能全部关闭，侧边栏只留画质、分辨率、剪贴板、全屏和手机输入相关的按钮；
+    - 帧率默认 30（可在侧边栏调到 60），登录类页面足够流畅，又能省一半 CPU 编码开销。
+
+    其余参数仍可用容器环境变量 ``SELKIES_*`` 调整（命令行参数优先）。
+    """
+    off = "false"
+    return [
+        selkies_bin(),
+        "--addr", "127.0.0.1",
+        "--port", str(port),
+        "--subfolder", "/vnc",
+        "--mode", "websockets",
+        f"--enable-basic-auth={off}",
+        f"--audio-enabled={off}",
+        f"--microphone-enabled={off}",
+        f"--webcam-enabled={off}",
+        f"--gamepad-enabled={off}",
+        f"--printing-enabled={off}",
+        "--file-transfers=none",
+        f"--command-enabled={off}",
+        f"--enable-sharing={off}",
+        f"--enable-collab={off}",
+        f"--enable-shared={off}",
+        f"--enable-player2={off}",
+        f"--enable-player3={off}",
+        f"--enable-player4={off}",
+        f"--second-screen={off}",
+        "--enable-clipboard=true",
+        "--clipboard-seamless=true",
+        "--enable-resize=true",
+        "--framerate=30,8-60",
+        "--ui-title=Account Manager 接管",
+        f"--ui-show-logo={off}",
+        f"--ui-sidebar-show-apps={off}",
+        f"--ui-sidebar-show-files={off}",
+        f"--ui-sidebar-show-gamepads={off}",
+        f"--ui-sidebar-show-webcam={off}",
+        f"--ui-sidebar-show-sharing={off}",
+        f"--ui-sidebar-show-audio-settings={off}",
+        f"--ui-sidebar-show-gaming-mode={off}",
+    ]
 
 
 class TakeoverBusy(Exception):
@@ -28,10 +102,14 @@ class TakeoverError(Exception):
 
 
 class ProcessLauncher:
-    """subprocess.Popen 的薄封装，便于测试注入假实现。"""
+    """subprocess.Popen 的薄封装，便于测试注入假实现。
 
-    def spawn(self, argv: list[str]):
-        return subprocess.Popen(argv)
+    子进程留在面板进程的进程组里：面板被 supervisord 整组停止时一并退出，不会留下
+    占着 :100 和 Web 端口的孤儿进程。
+    """
+
+    def spawn(self, argv: list[str], env: dict | None = None):
+        return subprocess.Popen(argv, env=env)
 
 
 def _terminate(proc) -> None:
@@ -48,7 +126,7 @@ def _terminate(proc) -> None:
 class TakeoverManager:
     def __init__(self, *, now_fn, launcher=None, browser_fn=None,
                  wait_display_fn=None, wait_web_fn=None, window_fitter_fn=None,
-                 display=":100", web_port=14500):
+                 clear_display_fn=None, display=":100", web_port=14500):
         self.now_fn = now_fn
         self.launcher = launcher or ProcessLauncher()
         self._browser_fn = browser_fn
@@ -66,7 +144,14 @@ class TakeoverManager:
             self._wait_web = wait_web_fn
         else:
             from server.takeover_browser import wait_tcp_port
-            self._wait_web = wait_tcp_port
+            self._wait_web = lambda host, port: wait_tcp_port(
+                host, port, timeout=SELKIES_READY_TIMEOUT_S, what="Selkies",
+            )
+        if clear_display_fn is not None:
+            self._clear_display = clear_display_fn
+        else:
+            from server.takeover_browser import clear_stale_x_display
+            self._clear_display = clear_stale_x_display
         self.display = display
         self.web_port = web_port
         self._lock = threading.RLock()
@@ -78,7 +163,9 @@ class TakeoverManager:
         self._login_email = ""
         self._saved_key = ""
         self._rejected_keys: set[str] = set()
-        self._xpra = None
+        self._xvfb = None
+        self._selkies = None
+        self._runtime_dir = None
         self._browser = None
         self._browser_executor = None
         self._window_fitter = None
@@ -117,35 +204,18 @@ class TakeoverManager:
                 from server.takeover_browser import open_takeover_browser
                 self._browser_fn = open_takeover_browser
             try:
-                # Xpra 自己拉起虚拟 X 桌面并提供 HTML5/WebSocket：
-                # - TCP 只绑 localhost，外层 Nginx + 面板 Cookie 负责鉴权；
-                # - 关闭 RFB 升级，避免意外提供传统 VNC 协议；
-                # - 双向剪贴板和 ping 保活显式开启，断线重连由 HTML5 客户端负责；
-                # - 音频、打印、传文件等接管不需要的子系统全部关闭，减少进程和故障面。
-                self._xpra = self.launcher.spawn([
-                    "xpra", "start-desktop", self.display,
-                    "--daemon=no", "--start-via-proxy=no", "--systemd-run=no",
-                    # 浏览器由本进程（而不是 Xpra --start-child）创建，因此虚拟屏
-                    # 关闭 Xauthority 校验；-nolisten tcp 保证该 X server 仍只在容器
-                    # 本地 UNIX socket 可达。
-                    "--xvfb=Xvfb +extension GLX +extension Composite "
-                    "-screen 0 8192x4096x24+32 -nolisten tcp -noreset -ac -dpi 96x96",
-                    "--bind=none",
-                    f"--bind-tcp=127.0.0.1:{self.web_port},auth=none",
-                    "--html=on", "--ssl=off", "--rfb-upgrade=0",
-                    "--http-scripts=off", "--mdns=no",
-                    # 让 Xpra 在客户端连接/窗口变化时把桌面匹配到客户端尺寸。
-                    # 指定 1280x900 会同时把 Xvfb 的可调整上限锁到该尺寸；
-                    # 更宽的 HTML5 画布随后 resize 失败，画面缩放与鼠标坐标失配。
-                    "--resize-display=yes", "--sharing=yes",
-                    "--clipboard=yes", "--clipboard-direction=both", "--pings=5",
-                    "--speaker=off", "--microphone=off", "--pulseaudio=no",
-                    "--printing=no", "--file-transfer=no", "--webcam=no",
-                    "--notifications=no", "--tray=no", "--system-tray=no",
-                    "--dbus-launch=no", "--dbus-control=no", "--dbus-proxy=no",
-                    "--start-new-commands=no", "--exit-with-children=no",
-                ])
+                # 先起虚拟屏，再让 Selkies 挂上去推流。上次异常退出（如容器重启）
+                # 可能留下 :100 的 socket 文件，先清掉，免得「等屏就绪」被旧文件骗过。
+                self._clear_display(self.display)
+                self._xvfb = self.launcher.spawn(xvfb_argv(self.display))
                 self._wait_display(self.display)
+                # Selkies 的运行时 socket（输入、剪贴板等）放在会话私有的临时目录，
+                # 结束时整个删掉。
+                self._runtime_dir = tempfile.mkdtemp(prefix="account-manager-selkies-")
+                env = dict(os.environ)
+                env.update(DISPLAY=self.display, XDG_RUNTIME_DIR=self._runtime_dir)
+                env.pop("WAYLAND_DISPLAY", None)
+                self._selkies = self.launcher.spawn(selkies_argv(self.web_port), env=env)
                 self._wait_web("127.0.0.1", self.web_port)
                 # Playwright 的 Sync API 通过线程绑定的 greenlet 驱动事件循环。
                 # FastAPI 的启动、停止请求可能落到不同工作线程，因此浏览器的
@@ -160,7 +230,7 @@ class TakeoverManager:
                     display=self.display,
                     login_email=login_email,
                 ).result()
-                # 桌面没有窗口管理器：由它把浏览器窗口持续铺满 Xpra 桌面，
+                # 桌面没有窗口管理器：由它把浏览器窗口持续铺满虚拟屏，
                 # 否则固定 1280x900 的窗口在宽屏右侧留黑、在矮视窗底部被裁掉。
                 self._window_fitter = self._window_fitter_fn(self.display)
             except Exception as exc:  # noqa: BLE001
@@ -293,6 +363,13 @@ class TakeoverManager:
                 console.log(f"关闭接管浏览器失败：{exc}")
         if browser_executor is not None:
             browser_executor.shutdown(wait=True, cancel_futures=True)
-        if self._xpra is not None:
-            _terminate(self._xpra)
-            self._xpra = None
+        # 先停推流再关屏，免得 Selkies 在屏幕消失后报一串采集错误。
+        if self._selkies is not None:
+            _terminate(self._selkies)
+            self._selkies = None
+        if self._xvfb is not None:
+            _terminate(self._xvfb)
+            self._xvfb = None
+        if self._runtime_dir is not None:
+            shutil.rmtree(self._runtime_dir, ignore_errors=True)
+            self._runtime_dir = None

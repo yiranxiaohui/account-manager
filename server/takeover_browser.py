@@ -45,7 +45,7 @@ MIN_SAFE_TAKEOVER_MAX_UPSTREAM = 8
 
 # 接管页导航只等到 commit（收到首个响应），不等 DOMContentLoaded。
 # 页面访问是尽力而为，不作为启动接管的验证条件：即使首个响应超时或
-# 代理断开，也保留浏览器和 Xpra，让用户在接管画面里手动刷新、继续操作。
+# 代理断开，也保留浏览器和接管画面，让用户在接管画面里手动刷新、继续操作。
 TAKEOVER_NAV_WAIT_UNTIL = "commit"
 TAKEOVER_NAV_TIMEOUT_MS = 45_000
 
@@ -84,9 +84,41 @@ def wait_x_socket(display: str, timeout: float = 10.0, poll: float = 0.1,
     raise TimeoutError(f"等待 X 显示 {display} 就绪超时（{path} 未出现）")
 
 
+def clear_stale_x_display(display: str, sock_dir: str = "/tmp/.X11-unix",
+                          lock_dir: str = "/tmp") -> None:
+    """删掉已无进程持有的 X 显示残留（锁文件与 socket）。
+
+    容器重启后 /tmp 里可能还留着上一个 Xvfb 的 socket 文件；它若还在，
+    ``wait_x_socket`` 会在新 Xvfb 真正监听前就返回。锁文件里的 PID 仍存活时
+    （确有 X server 在用这个显示号）一律不动。
+    """
+    num = display.lstrip(":").split(".")[0]
+    lock = os.path.join(lock_dir, f".X{num}-lock")
+    try:
+        with open(lock, encoding="ascii") as fh:
+            pid = int(fh.read().strip() or 0)
+    except (OSError, ValueError):
+        pid = 0
+    if pid > 0:
+        try:
+            os.kill(pid, 0)
+            return  # 持有者仍在运行
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return  # 进程存在，只是不属于我们
+    for path in (lock, os.path.join(sock_dir, f"X{num}")):
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            log(f"清理残留的 X 显示文件 {path} 失败：{exc}")
+
+
 def wait_tcp_port(host: str, port: int, timeout: float = 10.0,
-                  poll: float = 0.1, connect_fn=None) -> None:
-    """等待 Xpra 的 HTML5/WebSocket 监听口就绪，避免返回一个尚不可用的接管页。"""
+                  poll: float = 0.1, connect_fn=None, what: str = "接管画面") -> None:
+    """等待接管画面服务（Selkies）的 Web 端口就绪，避免返回一个尚不可用的接管页。"""
     connect = connect_fn or socket.create_connection
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -97,7 +129,7 @@ def wait_tcp_port(host: str, port: int, timeout: float = 10.0,
             continue
         conn.close()
         return
-    raise TimeoutError(f"等待 Xpra Web 端口 {host}:{port} 就绪超时")
+    raise TimeoutError(f"等待 {what} Web 端口 {host}:{port} 就绪超时")
 
 
 class _BrowserHandle:
@@ -222,7 +254,7 @@ def open_takeover_browser(*, session_key: str, proxy: str = "", display: str = "
         session = launch_chromium(
             headless=False,
             proxy=proxy_options,
-            display=display,  # 挂到 Xpra 管理的 :100 虚拟桌面
+            display=display,  # 挂到接管专用的 :100 虚拟屏（Selkies 推流）
             timezone=timezone,
             proxy_pool_limits=pool_limits,
         )

@@ -26,7 +26,7 @@ def test_fit_size_matches_client_desktop():
     assert fit_size((1672, 855)) == (1672, 855)
 
 
-def test_fit_size_skips_until_xpra_client_resizes_desktop():
+def test_fit_size_skips_until_selkies_client_resizes_desktop():
     # 客户端连上前根窗口还是 Xvfb 上限，铺满只会开出巨型窗口
     assert fit_size(XVFB_MAX) is None
     assert fit_size((0, 0)) is None
@@ -53,7 +53,7 @@ def test_plan_ignores_menus_hidden_and_non_browser_windows():
     windows = [
         _win(id=2, override=True),            # 下拉框/右键菜单：浏览器自己定位
         _win(id=3, viewable=False),           # 未映射
-        _win(id=4, wm_class="Xpra"),          # 非浏览器窗口
+        _win(id=4, wm_class="Selkies"),       # 非浏览器窗口
         _win(id=5),                           # 真正的浏览器主窗口
     ]
     assert plan_fit((1920, 1040), windows) == [(5, (1920, 1040))]

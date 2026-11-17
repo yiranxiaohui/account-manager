@@ -25,7 +25,7 @@ class FakeProc:
 
 
 class FakeLauncher:
-    def spawn(self, argv):
+    def spawn(self, argv, env=None):
         return FakeProc(argv)
 
 
@@ -63,6 +63,7 @@ def _manager(browsers):
         browser_fn=browser_fn,
         wait_display_fn=lambda display: None,
         wait_web_fn=lambda host, port: None,
+        clear_display_fn=lambda display: None,
         window_fitter_fn=lambda display: FakeFitter(),
     )
 

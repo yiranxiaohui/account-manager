@@ -1,7 +1,7 @@
-"""接管桌面没有窗口管理器：让浏览器主窗口始终铺满 Xpra 桌面。
+"""接管桌面没有窗口管理器：让浏览器主窗口始终铺满接管虚拟屏。
 
-为什么需要它：接管用 `xpra start-desktop` + `--resize-display`，Xpra 会把 Xvfb
-根窗口缩放到网页客户端的画布尺寸（随浏览器窗口变化）。但桌面里没有窗口管理器，
+为什么需要它：接管用 Xvfb + Selkies，Selkies 会经 RandR 把 Xvfb 根窗口调到网页
+客户端的画布尺寸（随浏览器窗口变化）。但桌面里没有窗口管理器，
 Chromium 按启动参数 `--window-size=1280,900` 开出窗口后就再没人去调它：画布比它宽时
 右侧一片黑，比它矮时底部（输入框）被裁掉。
 
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from account_manager import console
 
 POLL_INTERVAL = 0.3
-# Xvfb 启动时的 -screen 尺寸（见 takeover.py）。Xpra 客户端连上之前根窗口就是
+# Xvfb 启动时的 -screen 尺寸（见 takeover.py）。Selkies 客户端连上之前根窗口就是
 # 这个上限值；此时铺满会开出一个 8192x4096 的巨型窗口，白吃内存，跳过等客户端。
 XVFB_MAX = (8192, 4096)
 # 单窗口尺寸上限：超大屏也够用，防止异常尺寸把渲染内存撑爆。

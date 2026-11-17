@@ -54,7 +54,7 @@ def test_takeover_max_upstream_default_and_env(monkeypatch):
 
 
 def test_takeover_browser_uses_wide_relay_and_display(monkeypatch):
-    """接管浏览器：放宽的中继闸门、挂到 Xpra 桌面、有头模式。"""
+    """接管浏览器：放宽的中继闸门、挂到接管虚拟屏、有头模式。"""
     seen = {}
 
     class Session:

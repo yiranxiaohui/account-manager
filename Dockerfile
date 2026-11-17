@@ -10,30 +10,34 @@ RUN bun run build
 FROM python:3.13-slim
 # Chromium 自身的系统依赖由下面的 `playwright install --with-deps` 按官方清单安装；
 # 这里只装 Xvfb（注册/接管的虚拟显示）、字体和面板运行所需的服务。
+# Mesa 软件 GL 显式安装（以前由其他软件包间接带入），保持虚拟屏上浏览器的 GL 环境不变；
+# libgbm/pixman/xkbcommon/drm 是 Selkies 编码库 pixelflux 的系统依赖。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libgbm1 \
+    libpixman-1-0 \
+    libxkbcommon0 \
+    libdrm2 \
     fonts-liberation \
     fonts-unifont \
     nginx \
     supervisor \
+    openssl \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
-# Xpra LTS：虚拟 X 桌面 + WebSocket/HTML5 客户端。固定 HTML5 5.6，避免较新
-# 16.x 客户端在慢网络下的重连回归，并保留双向 Clipboard API 同步。
-# 官方仓库签名 Key 指纹：B499 3B57 3231 48E3 7977 E5D8 7325 4CAD 1797 8FAF。
-ARG XPRA_VERSION=5.1.6-r0-1
-ARG XPRA_HTML5_VERSION=5.6-r14-1
-ADD https://xpra.org/xpra.asc /usr/share/keyrings/xpra.asc
-RUN chmod 0644 /usr/share/keyrings/xpra.asc
-COPY deploy/xpra-lts.sources /etc/apt/sources.list.d/xpra-lts.sources
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      xpra-server=${XPRA_VERSION} \
-      xpra-x11=${XPRA_VERSION} \
-      xpra-codecs=${XPRA_VERSION} \
-      xpra-html5=${XPRA_HTML5_VERSION} && \
-    rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv
+# Selkies：把接管虚拟屏以 H.264 视频流经 WebSocket 推给网页。
+# 装在独立 venv，依赖不与面板混在一起；面板只按 ACCOUNT_MANAGER_SELKIES_BIN 调用它。
+# 版本与哈希锁定在 deploy/selkies-requirements.txt。
+COPY deploy/selkies-requirements.txt /tmp/selkies-requirements.txt
+RUN uv venv /opt/selkies --python /usr/local/bin/python3 && \
+    uv pip install --python /opt/selkies/bin/python --no-cache --require-hashes \
+      -r /tmp/selkies-requirements.txt && \
+    rm /tmp/selkies-requirements.txt && \
+    /opt/selkies/bin/selkies --help > /dev/null
+ENV ACCOUNT_MANAGER_SELKIES_BIN=/opt/selkies/bin/selkies
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # 此时源码还没拷入，只装第三方依赖；项目本体（hatchling 构建需要 README.md/源码）留到下面装
@@ -48,9 +52,15 @@ COPY server/ ./server/
 COPY serve.py main.py README.md ./
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/supervisord.conf /etc/supervisor/conf.d/account-manager.conf
-RUN nginx -t
+COPY deploy/prepare-tls.sh /usr/local/bin/account-manager-prepare-tls
+COPY deploy/entrypoint.sh /usr/local/bin/account-manager-entrypoint
+# 构建时校验 HTTPS 与明文两种监听配置，镜像里默认留明文那份；
+# 容器启动时入口脚本按 PANEL_TLS 重新生成（默认 HTTPS）。
+RUN TLS_DIR=/tmp/tls-check /usr/local/bin/account-manager-prepare-tls && nginx -t && \
+    rm -rf /tmp/tls-check && \
+    PANEL_TLS=off /usr/local/bin/account-manager-prepare-tls && nginx -t
 RUN uv sync --frozen --no-dev
 COPY --from=web /web/dist ./web/dist
 ENV ACCOUNT_MANAGER_INTERNAL_PORT=8791
 EXPOSE 8790
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/account-manager.conf"]
+CMD ["/usr/local/bin/account-manager-entrypoint"]

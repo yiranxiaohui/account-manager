@@ -32,7 +32,17 @@ docker compose pull
 docker compose up -d
 ```
 
-3. 浏览器打开 `http://<部署机器 IP>:8790`，用 `config.yaml` 里的 `panel.password` 登录
+3. 浏览器打开 `https://<部署机器 IP>:8790`，用 `config.yaml` 里的 `panel.password` 登录
+
+面板默认以 **HTTPS** 监听 8790（接管画面依赖浏览器的安全上下文，见下方「Selkies 网页接管」）：
+
+- 首次启动会在 `data/tls/` 生成一张 10 年期自签证书（`panel.crt` / `panel.key`），容器重建后沿用，
+  浏览器首次访问时点「高级 → 继续访问」即可；启动日志会打印证书的 SHA-256 指纹，可用来核对。
+- 想去掉证书警告，把正式证书（含完整证书链）和私钥放成 `data/tls/panel.crt`、`data/tls/panel.key` 后重启容器。
+- 明文 `http://` 访问同一端口会自动跳转到 `https://`，旧书签照常可用；调用开放 API 的脚本请改用
+  `https://`（自签证书需让客户端信任它，例如 `curl --cacert data/tls/panel.crt`，或 `-k`）。
+- 已由外层反代统一终结 HTTPS 的部署，可在 `docker-compose.yml` 里设置环境变量 `PANEL_TLS=off`
+  让容器回到明文 HTTP；此时必须通过外层的 `https://` 地址使用接管功能。
 
 `docker-compose.yml` 默认把 `./data`（sqlite + 运行记录）和 `./config.yaml` 挂进容器；镜像由 CI（`.github/workflows/build.yml`，跑在 self-hosted runner 上）构建推送到 `ghcr.io/yiranxiaohui/account-manager`，**部署机器只 `pull`，不在本地跑 `docker build`**。
 
@@ -64,23 +74,31 @@ docker compose up -d
 
 对应的面板内部接口（需面板登录 Cookie）：`GET /api/accounts`、`POST /api/accounts`、`PATCH /api/accounts/{email}`、`DELETE /api/accounts/{email}`、`POST /api/accounts/batch-delete`（body `{"emails": [...]}`）、`POST /api/accounts/batch-proxy`（body `{"emails": [...], "proxy_id": "…"}`）、`GET /api/proxies/usage`（每个代理池条目绑定的账号数）。
 
-## Xpra HTML5 免密登录接管
+## Selkies 网页接管（免密登录）
 
 账号列表里凡抓到 `sessionKey` 的账号，都可点「接管」：后台会用这份 Cookie 开一个
-已登录 claude.ai 的浏览器，并通过 Xpra HTML5 让你在网页上实时接管操作。
+已登录 claude.ai 的浏览器，并通过 [Selkies](https://github.com/selkies-project/selkies)
+把画面推到网页上，让你实时接管操作。
 
-- Xpra 直接管理独立虚拟桌面并提供 HTML5/WebSocket，不再使用 VNC/RFB 协议；
-  客户端自带 ping 保活和自动重连，连续恢复失败时外层接管页也会自动重载画面。
-- 容器内 Nginx 直接反代 Xpra，并用 FastAPI `auth_request` 复用面板密码鉴权；
-  **不额外对外开端口**（Xpra 仅绑 localhost，RFB/VNC 明确关闭）。
-- 双向文本剪贴板默认开启。使用 HTTPS 的 Chrome/Edge 时可直接在本机和接管浏览器之间
-  复制粘贴；首次使用需允许浏览器访问剪贴板。HTTP 或限制 Clipboard API 的浏览器可用
-  Xpra 右上角菜单里的剪贴板作为兜底。
+- 接管浏览器挂在独立的 Xvfb 虚拟屏（`:100`）上，Selkies 把这块屏编码成 H.264 视频，经与面板
+  同一端口的 WebSocket 推给网页；默认 30 帧，可在接管画面左侧的侧边栏里调帧率、画质和编码。
+- **画面分辨率跟随浏览器窗口**：调整窗口或全屏时，虚拟屏会实时调到同样大小，接管浏览器随之铺满，
+  不缩放、不留黑边，鼠标坐标始终准确。
+- **双向剪贴板**：本机复制的内容可直接在接管画面粘贴（含中文），接管画面里复制的内容也会同步回本机；
+  首次使用时浏览器会询问是否允许访问剪贴板。Mac 上的 ⌘ 组合键会映射成 Ctrl。
+- 手机和平板可用侧边栏的触控板模式和屏幕键盘（支持中文输入法）。
+- **必须通过 HTTPS 打开面板**：Selkies 用浏览器的 WebCodecs 解码视频，浏览器只在 HTTPS（安全上下文）下
+  提供它。容器默认就以 HTTPS 提供面板（见上方「Web 面板部署」）；用明文 HTTP 打开接管页时会提示改用 HTTPS。
+- 容器内 Nginx 反代 Selkies（路径 `/vnc/`），并用 FastAPI `auth_request` 复用面板密码鉴权；
+  **不额外对外开端口**（Selkies 只绑 localhost、只走 WebSocket，不开 WebRTC/UDP）。音频、麦克风、
+  摄像头、手柄、打印、文件传输、分享链接等接管用不到的功能全部关闭。
+- Selkies 装在镜像里的独立 venv（`/opt/selkies`），版本和哈希锁定在 `deploy/selkies-requirements.txt`。
+  其余参数可用容器环境变量 `SELKIES_*` 微调（如 `SELKIES_VIDEO_BITRATE`），面板设定的命令行参数优先。
 - 同一时刻只允许一个接管会话；接管页会每 20 秒续期，页面关闭或断网后默认
   15 分钟自动结束（`config.yaml` 的
   `takeover.idle_timeout_min` 可调，`takeover.enabled: false` 可整体关闭）。
-- 接管会话用独立的虚拟屏（`:100`，Xpra desktop），与注册流程并行、互不影响。
-- 普通接管和手动登录均允许页面访问超时或连接失败：浏览器与接管桌面会保留，
+- 接管会话用独立的虚拟屏，与注册流程（`:110` 起）并行、互不影响。
+- 普通接管和手动登录均允许页面访问超时或连接失败：浏览器与接管画面会保留，
   可在接管画面里手动刷新或访问其他页面。
 - sessionKey 是会话级凭证，换环境或过期会失效。接管画面落回登录页时，可在账号页的
   接管提示条点击「重新自动登录」：系统会在当前接管浏览器里重新提交邮箱、收取并打开
@@ -240,7 +258,7 @@ sessionKey（账号已入库，可在面板接管）、`failed` 失败；后两�
 示例：触发注册 → 等到完成 → 取邮箱 + sessionKey + 密码：
 
 ```bash
-KEY=cr_xxx; BASE=http://10.1.42.1:8790/api/v1
+KEY=cr_xxx; BASE=https://10.1.42.1:8790/api/v1   # 自签证书时 curl 需加 --cacert data/tls/panel.crt 或 -k
 RID=$(curl -s -X POST -H "Authorization: Bearer $KEY" $BASE/register | jq .run_id)
 while :; do
   R=$(curl -s -H "Authorization: Bearer $KEY" \

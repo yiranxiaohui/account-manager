@@ -727,6 +727,11 @@ export default function Accounts({ attach, running, navigate }) {
               {takeover.mode === "manual" && !takeover.email
                 ? "在接管画面完成登录后，会自动提取 sessionKey 并新建账号。"
                 : "接管期间每 5 秒自动提取一次 sessionKey，有变化时自动入库。"}
+              {!window.isSecureContext && (
+                <span className="mt-1 block text-warning">
+                  当前通过 HTTP 访问面板，接管画面需要 HTTPS：请改用 https:// 地址打开面板。
+                </span>
+              )}
             </Callout>
           </m.div>
         )}

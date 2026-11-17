@@ -11,7 +11,7 @@ register:
   auto_login: true
   code_regex: ""
 takeover:
-  enabled: true          # 是否允许 Xpra HTML5 免密接管
+  enabled: true          # 是否允许 Selkies 网页免密接管（需通过 HTTPS 打开面板）
   idle_timeout_min: 15   # 接管页关闭/断网多少分钟后自动结束
 api:
   enabled: false         # 开放 API（/api/v1/*）总开关
