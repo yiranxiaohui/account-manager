@@ -474,7 +474,8 @@ def test_list_organizations_summary():
     assert [o["uuid"] for o in out["organizations"]] == [TEAM, SEAT]
     assert out["organizations"][1] == {
         "uuid": SEAT, "name": "Premium Seat - Northeastern University", "raven_type": "team",
-        "capabilities": ["chat", "raven"], "rate_limit_tier": "tier", "billing_type": "b"}
+        "capabilities": ["chat", "raven"], "rate_limit_tier": "tier", "billing_type": "b",
+        "plan": "team"}
     assert fake.proxy == "http://p:1"
     assert oauth.list_organizations(SK, preferred=SEAT,
                                     client_factory=FakeClaude(orgs=ORGS).factory)["default"] == SEAT

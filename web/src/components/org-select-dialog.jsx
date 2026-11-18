@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Pill } from "@/components/pill";
+import { planLabel, planTone } from "@/lib/plan";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -77,6 +78,7 @@ function OrgSelectDialog({ state, onDone }) {
                   ) : o.uuid === state.def ? (
                     <Badge variant="secondary">默认</Badge>
                   ) : null}
+                  {o.plan ? <Pill tone={planTone(o.plan)}>{planLabel(o.plan)}</Pill> : null}
                   {o.raven_type ? (
                     <Badge variant="outline" className="font-normal">
                       {o.raven_type}

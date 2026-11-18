@@ -23,6 +23,7 @@ import time
 from dataclasses import asdict, dataclass
 from urllib.parse import parse_qs, urlsplit
 
+from account_manager import plan as plan_mod
 from account_manager.browser import mask_proxy, normalize_proxy_url
 from account_manager.session_check import _default_client, _looks_like_shield
 
@@ -62,6 +63,8 @@ class OAuthTokens:
     account_uuid: str
     email_address: str
     org_name: str = ""
+    # 授权时取到的组织摘要（plan.org_items，不含凭据），用来顺带更新账号套餐
+    organizations: tuple = ()
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -155,6 +158,7 @@ def summarize_orgs(payload) -> list[dict]:
             "capabilities": [str(c) for c in caps] if isinstance(caps, list) else [],
             "rate_limit_tier": str(org.get("rate_limit_tier") or ""),
             "billing_type": str(org.get("billing_type") or ""),
+            "plan": plan_mod.org_plan(org),
         })
     return out
 
@@ -208,7 +212,8 @@ def _authorization_code(client, session_key, org_uuid, challenge, state, timeout
     return code, (query.get("state") or [""])[0]
 
 
-def _parse_tokens(payload, *, org_uuid: str, now: float, org_name: str = "") -> OAuthTokens:
+def _parse_tokens(payload, *, org_uuid: str, now: float, org_name: str = "",
+                  organizations: tuple = ()) -> OAuthTokens:
     if not isinstance(payload, dict) or not payload.get("access_token"):
         raise OAuthError("换取令牌：响应里没有 access_token")
     try:
@@ -228,6 +233,7 @@ def _parse_tokens(payload, *, org_uuid: str, now: float, org_name: str = "") -> 
         account_uuid=str(acct.get("uuid") or ""),
         email_address=str(acct.get("email_address") or "").strip().lower(),
         org_name=str(org.get("name") or org_name or ""),
+        organizations=tuple(organizations),
     )
 
 
@@ -334,4 +340,5 @@ def authorize_with_session_key(
         raise
     except Exception as exc:  # noqa: BLE001 — 网络/代理异常，类型名足够定位且不泄露凭据
         raise OAuthError(f"请求失败：{type(exc).__name__}") from None
-    return _parse_tokens(payload, org_uuid=org, now=now_fn(), org_name=str(org_name))
+    return _parse_tokens(payload, org_uuid=org, now=now_fn(), org_name=str(org_name),
+                         organizations=tuple(plan_mod.org_items(orgs_payload)))

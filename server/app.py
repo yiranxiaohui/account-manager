@@ -19,10 +19,11 @@ from account_manager.anymail import AnyMailAccessError, AnyMailClient
 from account_manager.console import log
 from account_manager.oauth import OAuthError
 from account_manager.proxy_pool import ProxyPool, XuiNode
-from account_manager.session_check import check_session, probe_session
+from account_manager.session_check import inspect_session
 from account_manager.xui import XuiClient
 from server import (
-    account_proxy, auth, db, export, oauth_acquire, open_api, sk_import, sub2api, sub2api_proxies,
+    account_plan, account_proxy, auth, db, export, oauth_acquire, open_api, sk_import, sub2api,
+    sub2api_proxies,
 )
 from server.config_store import CONFIG_LOCK, save_config, to_dict
 from server.deps import AppState, default_now
@@ -361,7 +362,8 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         skip_dead = body.get("skip_dead", True) is not False
 
         def probe(sk, px, want_email):
-            return probe_session(sk, px or None, want_email=want_email)
+            res = inspect_session(sk, px or None, want_email=want_email)
+            return res.status, res.detail, res.email, res.orgs
 
         try:
             return await asyncio.to_thread(
@@ -527,11 +529,13 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         if row is None:
             raise HTTPException(status_code=404, detail="账号不存在")
         checked_at = state.now_fn()
-        status, detail = await asyncio.to_thread(
-            check_session, row.get("session_key") or "", row.get("proxy") or ""
+        res = await asyncio.to_thread(
+            inspect_session, row.get("session_key") or "", row.get("proxy") or ""
         )
-        db.update_account_check(state.conn, email, status, checked_at)
-        return {"status": status, "detail": detail, "checked_at": checked_at}
+        db.update_account_check(state.conn, email, res.status, checked_at)
+        plan_fields = account_plan.record(state.conn, email, res.orgs, checked_at)
+        return {"status": res.status, "detail": res.detail, "checked_at": checked_at,
+                **plan_fields}
 
     @app.get("/api/accounts/{email}/oauth/organizations")
     async def account_oauth_orgs(email: str, preferred: str | None = None,
@@ -675,9 +679,10 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
                         "check_detail": "该 sessionKey 已检测为失效"}
 
             proxy = ctx["proxy"]
-            check_status, check_detail, found_email = await asyncio.to_thread(
-                probe_session, session_key, proxy or None, want_email=True,
+            probed = await asyncio.to_thread(
+                inspect_session, session_key, proxy or None, want_email=True,
             )
+            check_status, check_detail, found_email = probed.status, probed.detail, probed.email
             if check_status == "dead":
                 state.takeover.mark_rejected(session_key)
                 return {**base, "check_status": check_status, "check_detail": check_detail}
@@ -711,6 +716,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
                     fields["proxy_id"] = proxy_id
                 db.update_account_fields(state.conn, email, fields)
             db.update_account_check(state.conn, email, check_status, now)
+            account_plan.record(state.conn, email, probed.orgs, now)
             state.takeover.mark_saved(email=email, session_key=session_key)
             log(f"已从接管浏览器取得 sessionKey 并{'新建' if created else '更新'}账号：{email}")
             notes = []
@@ -835,11 +841,12 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         except TakeoverError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        check_status, check_detail = await asyncio.to_thread(
-            check_session,
+        probed = await asyncio.to_thread(
+            inspect_session,
             session_key,
             row.get("proxy") or "",
         )
+        check_status, check_detail = probed.status, probed.detail
         checked_at = state.now_fn()
         if check_status == "dead":
             db.update_account_check(state.conn, email, check_status, checked_at)
@@ -850,6 +857,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
 
         db.update_account_fields(state.conn, email, {"session_key": session_key})
         db.update_account_check(state.conn, email, check_status, checked_at)
+        account_plan.record(state.conn, email, probed.orgs, checked_at)
         # 让自动取 sk 的轮询认得这把新 Key，不再重复检测/入库。
         state.takeover.mark_saved(email=email, session_key=session_key)
         return {

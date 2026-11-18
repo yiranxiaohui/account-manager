@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from curl_cffi import requests as cffi_requests
 
 from account_manager.browser import mask_proxy, needs_relay, normalize_proxy_url, parse_proxy
@@ -103,18 +105,32 @@ def _looks_like_shield(resp) -> bool:
         return True
 
 
-def _looks_like_org_payload(resp) -> bool:
-    """确认 200 真的是组织 API JSON，而不是代理返回的伪成功页面。"""
+def _org_payload(resp) -> list[dict] | None:
+    """200 响应里的组织列表；不是组织 API JSON（如代理返回的伪成功页面）时返回 None。"""
     try:
         payload = resp.json()
     except Exception:  # noqa: BLE001
-        return False
-    if isinstance(payload, list):
-        return all(isinstance(item, dict) for item in payload)
+        return None
     if isinstance(payload, dict):
-        items = payload.get("organizations")
-        return isinstance(items, list) and all(isinstance(item, dict) for item in items)
-    return False
+        payload = payload.get("organizations")
+    if isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
+        return payload
+    return None
+
+
+def _looks_like_org_payload(resp) -> bool:
+    """确认 200 真的是组织 API JSON，而不是代理返回的伪成功页面。"""
+    return _org_payload(resp) is not None
+
+
+@dataclass(frozen=True)
+class SessionProbe:
+    """一次 sessionKey 检测的结果。orgs 只在 alive 时有值（/api/organizations 原始条目）。"""
+
+    status: str
+    detail: str
+    email: str = ""
+    orgs: list[dict] = field(default_factory=list)
 
 
 def _account_email(resp) -> str:
@@ -162,21 +178,38 @@ def probe_session(
     want_email=True 且检测为 alive 时，用同一个客户端（同一条代理/中继）再请求
     /api/account 取账号邮箱；取不到邮箱不影响状态判定，邮箱返回空串。
     """
+    probe = inspect_session(
+        session_key, proxy, want_email=want_email, timeout=timeout,
+        client_factory=client_factory,
+    )
+    return probe.status, probe.detail, probe.email
+
+
+def inspect_session(
+    session_key: str,
+    proxy: str | None = None,
+    *,
+    want_email: bool = False,
+    timeout: float = 15.0,
+    client_factory=None,
+) -> SessionProbe:
+    """检测 sessionKey，同 probe_session，另外带回组织列表（用于识别套餐）。"""
     if not session_key:
-        return ("error", "无 sessionKey", "")
+        return SessionProbe("error", "无 sessionKey")
     try:
         proxy_url = normalize_proxy_url(proxy)
     except Exception:  # noqa: BLE001
-        return ("error", f"代理无效：{mask_proxy(proxy or '')}", "")
+        return SessionProbe("error", f"代理无效：{mask_proxy(proxy or '')}")
 
     factory = client_factory or _default_client
     try:
         client = factory(proxy_url)
     except Exception as exc:  # noqa: BLE001
         # socks5 缺 socksio 会在建 client 时报错
-        return ("error", f"发起请求失败：{exc}", "")
+        return SessionProbe("error", f"发起请求失败：{exc}")
 
     email = ""
+    orgs: list[dict] = []
     try:
         with client:
             resp = client.get(
@@ -186,6 +219,8 @@ def probe_session(
                 timeout=timeout,
             )
             status, detail = _classify(resp)
+            if status == "alive":
+                orgs = _org_payload(resp) or []
             if want_email and status == "alive":
                 try:
                     email = _account_email(client.get(
@@ -197,8 +232,8 @@ def probe_session(
                 except Exception:  # noqa: BLE001
                     email = ""
     except Exception as exc:  # noqa: BLE001
-        return ("error", f"请求失败：{type(exc).__name__}", "")
-    return status, detail, email
+        return SessionProbe("error", f"请求失败：{type(exc).__name__}")
+    return SessionProbe(status, detail, email, orgs)
 
 
 def _classify(resp) -> tuple[str, str]:

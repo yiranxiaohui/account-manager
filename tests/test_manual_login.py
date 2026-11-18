@@ -4,6 +4,7 @@ import threading
 import pytest
 from fastapi.testclient import TestClient
 
+from account_manager.session_check import SessionProbe
 from server import db
 from server.app import create_app
 from server.config_store import save_config
@@ -119,9 +120,9 @@ def env(tmp_path, monkeypatch):
 
     def fake_probe(sk, proxy=None, *, want_email=False, **_):
         probes.append((sk, proxy, want_email))
-        return result["value"]
+        return SessionProbe(*result["value"])
 
-    monkeypatch.setattr("server.app.probe_session", fake_probe)
+    monkeypatch.setattr("server.app.inspect_session", fake_probe)
     app = create_app(data_dir=tmp_path, config_path=tmp_path / "config.yaml",
                      now_fn=lambda: "2026-07-30T00:00:00Z")
     c = TestClient(app)

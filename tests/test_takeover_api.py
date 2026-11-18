@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from account_manager.anymail import AnyMailAccessError, ChildKey
+from account_manager.session_check import SessionProbe
 from server.app import create_app
 from server.config_store import save_config
 from server import db
@@ -44,7 +45,8 @@ def _client(tmp_path, monkeypatch):
             return "sk-new"
 
     monkeypatch.setattr(deps, "TakeoverManager", FakeMgr)
-    monkeypatch.setattr("server.app.check_session", lambda *a, **k: ("alive", "有效"))
+    monkeypatch.setattr("server.app.inspect_session",
+                        lambda *a, **k: SessionProbe("alive", "有效"))
 
     mail_control = {
         "invalid_keys": set(),
@@ -316,7 +318,7 @@ def test_takeover_relogin_rejects_new_dead_session(tmp_path, monkeypatch):
         mail_base_url="https://mail.test",
     )
     app = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr("server.app.check_session", lambda *a, **k: (
+    monkeypatch.setattr("server.app.inspect_session", lambda *a, **k: SessionProbe(
         "dead", "已失效（HTTP 403）",
     ))
     c = TestClient(app); _login(c)

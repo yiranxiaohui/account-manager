@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   mail_key TEXT, mail_base_url TEXT,
   check_status TEXT, checked_at TEXT, claimed_at TEXT,
   access_token TEXT, refresh_token TEXT, oauth_expires_at TEXT, oauth_scope TEXT,
-  org_uuid TEXT, account_uuid TEXT, oauth_at TEXT, org_name TEXT
+  org_uuid TEXT, account_uuid TEXT, oauth_at TEXT, org_name TEXT,
+  plan TEXT, plan_orgs TEXT, plan_checked_at TEXT
 );
 """
 
@@ -43,6 +44,10 @@ _ACCOUNT_EXTRA_COLS = (
     ("account_uuid", "TEXT"),
     ("oauth_at", "TEXT"),
     ("org_name", "TEXT"),
+    # 套餐（account_manager.plan）：plan 是主套餐标识，plan_orgs 是各组织套餐的 JSON 摘要
+    ("plan", "TEXT"),
+    ("plan_orgs", "TEXT"),
+    ("plan_checked_at", "TEXT"),
 )
 
 
@@ -256,6 +261,16 @@ def update_account_check(conn, email, status, checked_at) -> bool:
     cur = conn.execute(
         "UPDATE accounts SET check_status=?, checked_at=? WHERE email=?",
         (status, checked_at, email),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def update_account_plan(conn, email, plan: str, plan_orgs: str, checked_at: str) -> bool:
+    """写入账号套餐（plan_orgs 为 JSON 文本），返回是否有行被更新。"""
+    cur = conn.execute(
+        "UPDATE accounts SET plan=?, plan_orgs=?, plan_checked_at=? WHERE email=?",
+        (plan or "", plan_orgs or "", checked_at or "", email),
     )
     conn.commit()
     return cur.rowcount > 0

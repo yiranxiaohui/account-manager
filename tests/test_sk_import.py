@@ -5,7 +5,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 import server.app as appmod
-from account_manager.session_check import probe_session
+from account_manager.session_check import SessionProbe, probe_session
 from server import db, sk_import
 from server.app import create_app
 from server.config_store import save_config
@@ -14,6 +14,8 @@ SK1 = "sk-ant-sid01-" + "a" * 40
 SK2 = "sk-ant-sid01-" + "b" * 40
 SK3 = "sk-ant-sid01-" + "c" * 40
 PROXY_URL = "socks5://u:secret@h:1080"
+PRO_ORG = {"uuid": "o-pro", "name": "P", "capabilities": ["chat", "claude_pro"],
+           "rate_limit_tier": "default_claude_ai", "billing_type": "apple_subscription"}
 
 
 def test_parse_formats_and_errors():
@@ -62,12 +64,12 @@ def test_import_with_proxy_check_and_skip_dead(tmp_path, monkeypatch):
     def fake_probe(sk, proxy=None, *, want_email=False):
         calls.append((sk, proxy, want_email))
         if sk == SK1:
-            return ("alive", "有效", "found@claude.ai")
+            return SessionProbe("alive", "有效", "found@claude.ai", [PRO_ORG])
         if sk == SK2:
-            return ("alive", "有效", "")
-        return ("dead", "已失效（HTTP 401）", "")
+            return SessionProbe("alive", "有效", "")
+        return SessionProbe("dead", "已失效（HTTP 401）", "")
 
-    monkeypatch.setattr(appmod, "probe_session", fake_probe)
+    monkeypatch.setattr(appmod, "inspect_session", fake_probe)
     c, conn = _client(tmp_path)
     r = c.post("/api/accounts/import", json={
         "text": f"{SK1}\nkeep@x.com----{SK2}\n{SK3}", "proxy_id": "p1"})
@@ -80,14 +82,16 @@ def test_import_with_proxy_check_and_skip_dead(tmp_path, monkeypatch):
     assert a["session_key"] == SK1 and a["proxy"] == PROXY_URL
     assert a["proxy_id"] == "p1"  # 绑定代理池条目
     assert a["status"] == "success" and a["check_status"] == "alive"
-    assert db.get_account(conn, "keep@x.com")["session_key"] == SK2
+    assert a["plan"] == "pro" and a["plan_checked_at"] == "2026-07-29T00:00:00Z"
+    keep = db.get_account(conn, "keep@x.com")
+    assert keep["session_key"] == SK2 and not keep["plan"]  # 没有组织信息就不记套餐
     assert db.get_account(conn, sk_import.placeholder_email(SK3)) is None
     # 结果里不回显完整 sk
     assert SK1 not in r.text
 
 
 def test_import_without_check_updates_existing_and_placeholder(tmp_path, monkeypatch):
-    monkeypatch.setattr(appmod, "probe_session", lambda *a, **k: 1 / 0)
+    monkeypatch.setattr(appmod, "inspect_session", lambda *a, **k: 1 / 0)
     c, conn = _client(tmp_path)
     db.upsert_account(conn, "old@x.com", "x.com", "", "", None, "success",
                       session_key="sk-old", proxy="http://keep:1")

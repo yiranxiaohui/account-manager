@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, Request
 
 from account_manager import oauth
-from server import db
+from server import account_plan, db
 
 
 class AccountNotFound(Exception):
@@ -75,6 +75,7 @@ def list_orgs(conn, email: str, *, now: str, preferred: str | None = None,
         if exc.kind == "dead":
             db.update_account_check(conn, email, "dead", now)
         raise
+    account_plan.record(conn, email, result.get("organizations"), now)
     return {**result, "current": current}
 
 
@@ -120,6 +121,9 @@ def acquire(conn, email: str, *, now: str, authorize=None,
         "account_uuid": tokens.account_uuid,
         "oauth_at": now,
     })
+    # 授权时顺带取到了组织列表就更新套餐，否则按新授权的组织重算主套餐
+    if not account_plan.record(conn, email, getattr(tokens, "organizations", ()), now):
+        account_plan.refresh_primary(conn, email)
     return db.get_account(conn, email)
 
 

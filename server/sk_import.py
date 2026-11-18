@@ -13,7 +13,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from server import db
+from server import account_plan, db
 
 SK_RE = re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
@@ -75,16 +75,16 @@ def run_import(
     now: str,
     probe,
 ) -> dict:
-    """执行导入。probe(session_key, proxy, want_email) -> (status, detail, email)。
+    """执行导入。probe(session_key, proxy, want_email) -> (status, detail, email[, orgs])。
 
     proxy / proxy_id 是同一个代理池条目的地址与 id；为空时新账号不绑定代理，
-    已有账号保留原代理。
+    已有账号保留原代理。probe 返回的 orgs（组织列表）用来顺带记录套餐。
     """
     items, results = parse(text)
     if len(items) + len(results) > MAX_LINES:
         raise ValueError(f"单次最多导入 {MAX_LINES} 行")
 
-    probed: dict[int, tuple[str, str, str]] = {}
+    probed: dict[int, tuple] = {}
     if check:
         def _probe(item: ParsedLine):
             return item.line, probe(item.session_key, proxy, not item.email)
@@ -94,7 +94,8 @@ def run_import(
                 probed[line] = res
 
     for item in items:
-        status, detail, found_email = probed.get(item.line, ("", "", ""))
+        status, detail, found_email, *extra = probed.get(item.line, ("", "", ""))
+        orgs = extra[0] if extra else None
         base = {"line": item.line, "sk": mask_sk(item.session_key), "check_status": status or None}
         if check and skip_dead and status == "dead":
             results.append({**base, "email": item.email, "result": "skipped", "detail": detail})
@@ -117,6 +118,8 @@ def run_import(
             result = "updated"
         if status:
             db.update_account_check(conn, email, status, now)
+        if orgs:
+            account_plan.record(conn, email, orgs, now)
         note = detail
         if not item.email and not found_email:
             note = (detail + "；" if detail else "") + "未取得邮箱，使用占位标识"

@@ -42,6 +42,8 @@ FIELDS: tuple[ExportField, ...] = (
     ExportField("org_name", "orgName", "组织（工作空间）名称"),
     ExportField("account_uuid", "accountUuid", "Claude 账号 UUID"),
     ExportField("oauth_at", "oauthAt", "授权时间"),
+    ExportField("plan", "plan", "套餐"),
+    ExportField("plan_checked_at", "planCheckedAt", "套餐识别时间"),
 )
 FIELD_BY_KEY = {f.key: f for f in FIELDS}
 DEFAULT_FIELDS: tuple[str, ...] = ("email", "session_key", "proxy", "mail_base_url", "mail_key")

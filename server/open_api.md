@@ -220,9 +220,11 @@ curl -X POST -H "Authorization: Bearer $KEY" \
   "email": "alice@example.com",
   "organizations": [
     {"uuid": "…", "name": "Northeastern University", "raven_type": "team",
-     "capabilities": ["chat", "raven"], "rate_limit_tier": "…", "billing_type": "…"},
+     "capabilities": ["chat", "raven"], "rate_limit_tier": "…", "billing_type": "…",
+     "plan": "team"},
     {"uuid": "…", "name": "Premium Seat - Northeastern University", "raven_type": "team",
-     "capabilities": ["chat", "raven"], "rate_limit_tier": "…", "billing_type": "…"}
+     "capabilities": ["chat", "raven"], "rate_limit_tier": "…", "billing_type": "…",
+     "plan": "team"}
   ],
   "default": "…",
   "current": "…"
@@ -231,6 +233,7 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 
 - `default`：调用 `accounts/oauth` 时不传 `org_uuid` 会使用的组织。
 - `current`：该账号上次授权的组织（没授权过为空字符串）。
+- `plan`：该组织的套餐，取值 `free` / `pro` / `max` / `max_5x` / `max_20x` / `team` / `enterprise` / `api` / `unknown`。调用本接口时会顺带更新账号的套餐（导出字段 `plan`）。
 - 错误码同 `accounts/oauth`（`400` / `404` / `422`）。
 
 示例：

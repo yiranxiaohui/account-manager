@@ -62,6 +62,7 @@ docker compose up -d
 
 - **增**：「新增账号」手动录入已有账号，只有邮箱必填，可同时填写备注、密码、sessionKey、mailUrl、mailKey，并从代理池中选择代理；邮箱已存在时拒绝（不会覆盖）。也可以继续用「导入 SK…」「手动登录…」批量/交互式建号。
 - **查**：按邮箱 / 备注 / 代理名称或地址 / sessionKey 搜索，并按存活检测结果（有效、失效、被拦截、未检测）、是否已获取、是否有 sessionKey 筛选。
+- **套餐**：每个账号的邮箱旁显示 Claude 套餐徽章（Free / Pro / Max 5x / Max 20x / Team / Enterprise），悬停可看各组织的套餐与 `rate_limit_tier`，并可按套餐筛选。套餐在检测 sessionKey（单个检测，或勾选后「检测」批量检测）、导入 SK、接管取 sk、列组织和 OAuth 授权时，根据 `claude.ai/api/organizations` 返回的组织信息自动识别：`capabilities` 含 `claude_max` 为 Max（`rate_limit_tier` 为 `default_claude_max_20x` / `default_claude_max_5x` 区分倍数），含 `claude_pro` 为 Pro，`raven_type` 为 `enterprise` / `team` 为 Enterprise / Team，只有 `chat` 为 Free。账号属于多个组织时，以 OAuth 授权的组织为准，否则取最高的套餐（只有 `api` 能力的 Console 组织不参与），其它不同套餐的组织在徽章上显示为「+N」。检测失败时保留上次识别的结果。
 - **改**：「编辑」可修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。勾选账号后可「设置代理」批量更换代理。
 - **删**：每行的删除按钮单个删除，或勾选（支持全选当前筛选结果）后「删除所选」批量删除，均需二次确认。
 

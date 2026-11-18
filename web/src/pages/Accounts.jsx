@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { toast } from "sonner";
 import {
+  Building2,
   Check,
   ChevronUp,
   Copy,
+  Crown,
   Download,
   ExternalLink,
   Globe,
@@ -24,6 +26,7 @@ import {
   ShieldCheck,
   ShieldQuestionMark,
   ShieldX,
+  Sparkles,
   Trash2,
   Upload,
   Users,
@@ -33,6 +36,7 @@ import { api } from "../api.js";
 import { cn } from "@/lib/utils";
 import { maskProxyUrl, parseProxyUrl } from "@/lib/proxy";
 import { relTime } from "@/lib/time";
+import { matchPlan, otherPlanCount, planLabel, planTone, planTooltip } from "@/lib/plan";
 import { StatusBadge } from "@/components/status-badge";
 import { Pill } from "@/components/pill";
 import { PageHeader } from "@/components/page-header";
@@ -102,9 +106,15 @@ const FILTERS = [
   ["no_sk", "无 sessionKey"],
   ["oauth", "已授权 OAuth"],
   ["no_oauth", "未授权 OAuth"],
+  ["plan_max", "套餐：Max"],
+  ["plan_pro", "套餐：Pro"],
+  ["plan_team", "套餐：Team / Enterprise"],
+  ["plan_free", "套餐：Free"],
+  ["plan_none", "套餐：未识别"],
 ];
 
 function matchFilter(a, filter) {
+  if (filter.startsWith("plan_")) return matchPlan(a.plan, filter.slice(5));
   switch (filter) {
     case "alive":
     case "dead":
@@ -130,7 +140,7 @@ function matchFilter(a, filter) {
 function matchQuery(a, q, proxyById) {
   if (!q) return true;
   return [a.email, a.display_name, proxyById[a.proxy_id]?.name, parseProxyUrl(a.proxy)?.address,
-    a.session_key]
+    a.session_key, planLabel(a.plan)]
     .some((v) => String(v || "").toLowerCase().includes(q));
 }
 
@@ -212,6 +222,29 @@ function untilTime(iso) {
   return `${Math.floor(sec / 86400)} 天后过期`;
 }
 
+const PLAN_ICON = {
+  max: Crown,
+  max_5x: Crown,
+  max_20x: Crown,
+  pro: Sparkles,
+  team: Building2,
+  enterprise: Building2,
+};
+
+// 账号套餐：检测 sessionKey / 列组织 / OAuth 授权时自动识别；属于多个不同套餐的组织时显示 +N
+function PlanBadge({ acct }) {
+  if (!acct.plan) return null;
+  const Icon = PLAN_ICON[acct.plan];
+  const others = otherPlanCount(acct);
+  return (
+    <Pill tone={planTone(acct.plan)} title={planTooltip(acct)} className="shrink-0 self-center">
+      {Icon ? <Icon /> : null}
+      {planLabel(acct.plan)}
+      {others ? <span className="font-normal opacity-70">+{others}</span> : null}
+    </Pill>
+  );
+}
+
 function OAuthBadge({ acct }) {
   if (!acct.access_token) return null;
   const expired = acct.oauth_expires_at && new Date(acct.oauth_expires_at).getTime() <= Date.now();
@@ -244,6 +277,7 @@ export default function Accounts({ attach, running, navigate }) {
   const [loaded, setLoaded] = useState(false);
   const [authorizing, setAuthorizing] = useState(() => new Set());
   const [batchOAuth, setBatchOAuth] = useState(null); // {done, total, ok, failed}
+  const [batchCheck, setBatchCheck] = useState(null); // {done, total, alive, failed}
   const orgPicker = useOrgPicker();
   const [takeover, setTakeover] = useState({ running: false, email: null });
   const [relogging, setRelogging] = useState(false);
@@ -390,19 +424,55 @@ export default function Accounts({ attach, running, navigate }) {
   async function doCheck(acctEmail) {
     setChecking(acctEmail);
     try {
-      const res = await api.checkAccount(acctEmail);
-      setAccounts((list) =>
-        list.map((a) =>
-          a.email === acctEmail
-            ? { ...a, check_status: res.status, checked_at: res.checked_at, check_detail: res.detail }
-            : a,
-        ),
-      );
+      const res = await checkOne(acctEmail);
+      if (res.plan) {
+        toast.success(`「${acctEmail}」${LIVE_LABEL[res.status] || res.status}，套餐 ${planLabel(res.plan)}`);
+      }
     } catch (e) {
       toast.error(`「${acctEmail}」检测失败（${e.status || "?"}）`);
     } finally {
       setChecking("");
     }
+  }
+
+  // 检测一个账号并合并结果（存活状态 + 识别出的套餐），返回接口结果
+  async function checkOne(acctEmail) {
+    const res = await api.checkAccount(acctEmail);
+    const { status, detail, ...rest } = res;
+    setAccounts((list) =>
+      list.map((a) =>
+        a.email === acctEmail
+          ? { ...a, ...rest, check_status: status, check_detail: detail }
+          : a,
+      ),
+    );
+    return res;
+  }
+
+  // 批量检测：前端并发 3 路逐个调用，顺带刷新套餐
+  async function runBatchCheck(emails) {
+    const queue = [...emails];
+    const stat = { done: 0, total: emails.length, alive: 0, failed: 0 };
+    setBatchCheck({ ...stat });
+    const worker = async () => {
+      while (queue.length) {
+        const email = queue.shift();
+        try {
+          const res = await checkOne(email);
+          if (res.status === "alive") stat.alive += 1;
+          else stat.failed += 1;
+        } catch {
+          stat.failed += 1;
+        }
+        stat.done += 1;
+        setBatchCheck({ ...stat });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setBatchCheck(null);
+    const msg = `检测完成：有效 ${stat.alive} 个${stat.failed ? `，其它 ${stat.failed} 个` : ""}`;
+    if (stat.failed) toast.warning(msg);
+    else toast.success(msg);
   }
 
   const setAuthorizingFlag = (email, on) =>
@@ -844,6 +914,7 @@ export default function Accounts({ attach, running, navigate }) {
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5 max-md:basis-[calc(100%-1.75rem)]">
                       <div className="flex min-w-0 items-baseline gap-2">
                         <span className="truncate text-sm font-medium" title={a.email}>{a.email}</span>
+                        <PlanBadge acct={a} />
                         {a.display_name ? (
                           <span className="shrink-0 truncate text-xs text-muted-foreground">{a.display_name}</span>
                         ) : null}
@@ -869,7 +940,7 @@ export default function Accounts({ attach, running, navigate }) {
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5 max-md:ml-auto">
                       {a.session_key && (
-                        <TipButton variant="ghost" size="icon-sm" tip="检测 sessionKey 是否有效"
+                        <TipButton variant="ghost" size="icon-sm" tip="检测 sessionKey 是否有效（顺带识别套餐）"
                           onClick={() => doCheck(a.email)} disabled={checking === a.email}>
                           {checking === a.email ? <Spinner /> : <HeartPulse />}
                         </TipButton>
@@ -1015,6 +1086,16 @@ export default function Accounts({ attach, running, navigate }) {
             <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-xl bg-popover/90 p-1.5 pl-4 shadow-xl ring-1 ring-foreground/10 backdrop-blur-md">
               <span className="text-sm font-medium tabular-nums">已选 {selectedVisible.length} 个</span>
               <Separator orientation="vertical" className="mx-1.5 data-vertical:h-5 data-vertical:self-center" />
+              <TipButton
+                variant="ghost"
+                size="sm"
+                disabled={!!batchCheck || !withSk.length}
+                tip="检测所选账号的 sessionKey 是否有效，并识别套餐（没有 sessionKey 的跳过）"
+                onClick={() => runBatchCheck(withSk.map((a) => a.email))}
+              >
+                {batchCheck ? <Spinner /> : <HeartPulse />}
+                {batchCheck ? `检测中 ${batchCheck.done}/${batchCheck.total}…` : `检测（${withSk.length}）`}
+              </TipButton>
               <TipButton
                 variant="ghost"
                 size="sm"
