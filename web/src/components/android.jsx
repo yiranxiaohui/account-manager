@@ -217,8 +217,8 @@ export function AndroidInstallDialog({ open, onOpenChange, android }) {
           <AlertDialogDescription asChild>
             <div className="space-y-2">
               <p>
-                首次使用需要从 Google 官方仓库下载 Android 模拟器和 Android 14（Google Play）系统镜像，
-                约 {gb(total)}，解压后占用约 4 GB 磁盘；每个账号的虚拟设备另占 1～3 GB。
+                从 Google 官方仓库安装 Android 模拟器和 Android 17（Google Play，API 37.2）系统镜像。
+                完整下载约 {gb(total)}，已安装的组件会跳过。解压后约占 9 GiB，设备数据另计。
                 下载在后台进行，安装好之后各账号共用。
               </p>
               <p>下载即表示同意 Android SDK 许可协议。</p>

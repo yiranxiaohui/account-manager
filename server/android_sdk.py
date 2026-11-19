@@ -1,6 +1,6 @@
 """Android 模拟器运行环境：SDK 目录布局、按需下载安装、每个账号的 AVD。
 
-运行环境不打进镜像：模拟器加系统镜像解压后约 4 GB，每次发版都让部署机重新拉一遍
+运行环境不打进镜像：模拟器加系统镜像解压后约 9 GiB，每次发版都让部署机重新拉一遍
 不划算。面板第一次需要时从 Google 官方仓库下载到数据目录（``data/android``），
 之后长期复用。下载地址、大小和 SHA-256 都固定在 PACKAGES 里，换版本时一并更新。
 
@@ -8,7 +8,7 @@
 
     sdk/emulator/                    模拟器
     sdk/platform-tools/              adb
-    sdk/system-images/android-34/google_apis_playstore/x86_64/
+    sdk/system-images/android-37.2/google_apis_playstore_ps16k/x86_64/
     avd/<名字>.ini, avd/<名字>.avd/  每个账号一台虚拟设备（数据盘随用随长）
     home/                            模拟器与 adb 的配置、adb 密钥
     downloads/                       下载中的临时文件，安装完删除
@@ -41,7 +41,8 @@ class Package:
     dest: str          # 相对 sdk/ 的安装目录
 
 
-SYSTEM_IMAGE_DIR = "system-images/android-34/google_apis_playstore/x86_64"
+SYSTEM_IMAGE_TARGET = "android-37.2"
+SYSTEM_IMAGE_DIR = f"system-images/{SYSTEM_IMAGE_TARGET}/google_apis_playstore_ps16k/x86_64"
 SYSTEM_IMAGE_SYSDIR = SYSTEM_IMAGE_DIR + "/"
 
 PACKAGES = (
@@ -64,19 +65,19 @@ PACKAGES = (
         dest="platform-tools",
     ),
     Package(
-        key="system-image-34-google_apis_playstore-x86_64-r14",
-        label="Android 14 系统镜像（Google Play）",
-        url=REPO + "sys-img/google_apis_playstore/x86_64-34_r14.zip",
-        size=1_510_752_654,
-        sha256="22e7797a7e14d346bc6ed867d84ed423beaf4364db567edaa97f85a99558cf80",
+        key="system-image-37.2-google_apis_playstore_ps16k-x86_64-r7",
+        label="Android 17 系统镜像（Google Play，API 37.2）",
+        url=REPO + "sys-img/google_apis_playstore/x86_64-playstore-ps16k-37.2_r07.zip",
+        size=2_453_971_990,
+        sha256="ddcc2271a79c18eec4a74a38fb398f8980830641defdbeade920396a7e42bb1c",
         strip_prefix="x86_64/",
         dest=SYSTEM_IMAGE_DIR,
     ),
 )
 
 TOTAL_DOWNLOAD = sum(p.size for p in PACKAGES)
-# 解压后大约是压缩包的 2.5 倍；再给第一台虚拟设备的数据盘留 2 GB。
-REQUIRED_FREE = int(TOTAL_DOWNLOAD * 3.5) + 2 * 1024 ** 3
+# 新系统镜像解压后占 8,774,608,505 字节，约为压缩包的 3.6 倍。
+INSTALL_SPACE_FACTOR = 4.6  # 压缩包与解压目录在安装时并存
 MARKER = ".account-manager-package.json"
 CHUNK = 1024 * 1024
 
@@ -273,7 +274,7 @@ class SdkInstaller:
             self._downloaded = sum(p.size for p in PACKAGES if p not in pending)
         if not pending:
             return
-        need = int(sum(p.size for p in pending) * 3.5) + 2 * 1024 ** 3
+        need = int(sum(p.size for p in pending) * INSTALL_SPACE_FACTOR) + 2 * 1024 ** 3
         free = self._disk_free(paths.root)
         if free < need:
             raise InstallError(
@@ -356,7 +357,7 @@ def avd_config(name: str) -> str:
         "tag.id": "google_apis_playstore",
         "tag.display": "Google Play",
         "PlayStore.enabled": "true",
-        "target": "android-34",
+        "target": SYSTEM_IMAGE_TARGET,
         "hw.lcd.width": str(DEVICE_WIDTH),
         "hw.lcd.height": str(DEVICE_HEIGHT),
         "hw.lcd.density": str(DEVICE_DENSITY),
@@ -379,11 +380,13 @@ def ensure_avd(paths: AndroidPaths, email: str) -> str:
     """建好（或刷新配置）账号的虚拟设备，返回 AVD 名。数据盘由模拟器首次启动时创建。"""
     name = avd_name(email)
     directory = avd_dir(paths, email)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "config.ini").write_text(avd_config(name), encoding="utf-8")
+    # Android 14 的盘在账号目录顶层。跨系统版本使用独立目录，旧系统可原地回滚。
+    device = directory / SYSTEM_IMAGE_TARGET
+    device.mkdir(parents=True, exist_ok=True)
+    (device / "config.ini").write_text(avd_config(name), encoding="utf-8")
     (directory / ACCOUNT_FILE).write_text(json.dumps({"email": email}), encoding="utf-8")
     (paths.avd / f"{name}.ini").write_text(
-        f"avd.ini.encoding=UTF-8\npath={directory}\ntarget=android-34\n", encoding="utf-8",
+        f"avd.ini.encoding=UTF-8\npath={device}\ntarget={SYSTEM_IMAGE_TARGET}\n", encoding="utf-8",
     )
     return name
 

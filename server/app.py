@@ -920,7 +920,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
 
     @app.post("/api/android/install")
     def android_install(_=Depends(require_auth)):
-        """后台下载安装模拟器与系统镜像（约 1.8 GB）；进度见 GET /api/android。"""
+        """后台下载安装模拟器与系统镜像；进度见 GET /api/android。"""
         return state.android.install()
 
     @app.post("/api/android/start")

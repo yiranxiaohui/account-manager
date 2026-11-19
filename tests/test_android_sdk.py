@@ -172,7 +172,8 @@ def test_ensure_avd_writes_config_and_pointer(tmp_path, monkeypatch):
     paths = sdk.AndroidPaths(tmp_path / "android")
     name = sdk.ensure_avd(paths, "a@x.com")
     directory = sdk.avd_dir(paths, "a@x.com")
-    config = (directory / "config.ini").read_text()
+    device = directory / sdk.SYSTEM_IMAGE_TARGET
+    config = (device / "config.ini").read_text()
     assert f"AvdId={name}\n" in config
     assert f"image.sysdir.1={sdk.SYSTEM_IMAGE_SYSDIR}\n" in config
     assert "PlayStore.enabled=true\n" in config
@@ -180,20 +181,27 @@ def test_ensure_avd_writes_config_and_pointer(tmp_path, monkeypatch):
     assert "hw.ramSize=3072\n" in config
     assert "hw.keyboard=yes\n" in config
     pointer = (paths.avd / f"{name}.ini").read_text()
-    assert f"path={directory}\n" in pointer
+    assert f"path={device}\n" in pointer
+    assert f"target={sdk.SYSTEM_IMAGE_TARGET}\n" in pointer
     assert sdk.list_envs(paths) == ["a@x.com"]
 
 
 def test_rename_and_delete_env(tmp_path):
     paths = sdk.AndroidPaths(tmp_path / "android")
+    old_dir = sdk.avd_dir(paths, "old@x.com")
+    old_dir.mkdir(parents=True)
+    (old_dir / "config.ini").write_text("target=android-34\n")
+    (old_dir / "userdata-qemu.img.qcow2").write_bytes(b"data")
     sdk.ensure_avd(paths, "old@x.com")
-    (sdk.avd_dir(paths, "old@x.com") / "userdata-qemu.img.qcow2").write_bytes(b"data")
+    (old_dir / sdk.SYSTEM_IMAGE_TARGET / "userdata-qemu.img.qcow2").write_bytes(b"new data")
     assert sdk.rename_env(paths, "old@x.com", "new@x.com") is True
     new_dir = sdk.avd_dir(paths, "new@x.com")
     assert (new_dir / "userdata-qemu.img.qcow2").read_bytes() == b"data"
     assert not sdk.avd_dir(paths, "old@x.com").exists()
     assert not (paths.avd / f"{sdk.avd_name('old@x.com')}.ini").exists()
-    assert f"path={new_dir}\n" in (paths.avd / f"{sdk.avd_name('new@x.com')}.ini").read_text()
+    assert (new_dir / "config.ini").read_text() == "target=android-34\n"
+    assert (new_dir / sdk.SYSTEM_IMAGE_TARGET / "userdata-qemu.img.qcow2").read_bytes() == b"new data"
+    assert f"path={new_dir / sdk.SYSTEM_IMAGE_TARGET}\n" in (paths.avd / f"{sdk.avd_name('new@x.com')}.ini").read_text()
     assert sdk.list_envs(paths) == ["new@x.com"]
     assert sdk.rename_env(paths, "missing@x.com", "z@x.com") is False
 
