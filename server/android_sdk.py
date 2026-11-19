@@ -315,25 +315,21 @@ class SdkInstaller:
         console.log(f"{pkg.label} 已安装。")
 
 
-# ---------------------------------------------------------------- 账号的虚拟设备
+# ---------------------------------------------------------------- 设备档案（Google 官方 check-in）
 
-DEVICE_WIDTH = 720
-DEVICE_HEIGHT = 1600
-DEVICE_DENSITY = 320
+# 模拟器和 Google Play 运行在 Play 支持的 Google 系统镜像上。对外展示的「机型」如果
+# 自造（官方镜像里不存在），Play 认证会直接失败；这里向 Google 官方 check-in 接口按
+# 指定机型取一份真实存在的设备档案，档案里的参数（代号、系统版本、指纹）才是 Play
+# 认可的，客户机的品牌/型号/序列号仍由账号自己的 identity 决定。
+CHECKIN_URL = "https://android.googleapis.com/checkin"
+CHECKIN_USER_AGENT = "Android-Checkin/2.0"
+DEVICE_PROFILE_FILE = "device_profile.json"
+
 ACCOUNT_FILE = "account.json"
 IDENTITY_FILE = "identity.json"
 
-# 伪装成真机的机型池：(品牌, 厂商, 型号, 设备代号, 产品名)。设备代号同时写进
-# AVD 配置，让模拟器在 Linux 上以 ro.product.device 暴露它；它必须和下面的
-# guest_properties 对得上。
-DEVICE_MODELS = (
-    ("google", "Google", "Pixel 8", "shiba", "shiba"),
-    ("google", "Google", "Pixel 8 Pro", "husky", "husky"),
-    ("google", "Google", "Pixel 7", "panther", "panther"),
-    ("samsung", "samsung", "SM-S921B", "e1s", "e1s"),
-    ("samsung", "samsung", "SM-S911B", "dm3q", "dm3q"),
-    ("OnePlus", "OnePlus", "CPH2449", "OP594DL1", "OP594DL1"),
-)
+# AVD 里的设备代号必须是 Google 官方 profile：Play 认证按它查机型，自造代号会失败。
+DEVICE_MODEL = "Pixel 8 Pro"
 SERIAL_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
 
@@ -343,7 +339,6 @@ class DeviceIdentity:
     manufacturer: str
     model: str
     device: str
-    product: str
     serial: str
     imei: str
     meid: str
@@ -354,19 +349,21 @@ class DeviceIdentity:
     def as_dict(self) -> dict[str, str]:
         return {
             "brand": self.brand, "manufacturer": self.manufacturer,
-            "model": self.model, "device": self.device,
-            "serial": self.serial, "imei": self.imei, "meid": self.meid,
-            "android_id": self.android_id, "bluetooth": self.bluetooth,
-            "wifi_mac": self.wifi_mac,
+            "model": self.model, "device": self.device, "serial": self.serial,
+            "imei": self.imei, "meid": self.meid, "android_id": self.android_id,
+            "bluetooth": self.bluetooth, "wifi_mac": self.wifi_mac,
         }
+
+
+def _digest(seed: str) -> bytes:
+    return hashlib.sha256(seed.encode("utf-8")).digest()
 
 
 def _decimal_digits(seed: str, n: int) -> str:
     out = []
     i = 0
     while len(out) < n:
-        digest = hashlib.sha256(f"{seed}#{i}".encode("utf-8")).digest()
-        out.extend(str(b % 10) for b in digest)
+        out.extend(str(b % 10) for b in _digest(f"{seed}#{i}"))
         i += 1
     return "".join(out[:n])
 
@@ -385,29 +382,126 @@ def _luhn_tail(prefix: str) -> str:
 
 
 def device_identity(email: str) -> DeviceIdentity:
-    """按账号稳定地生成一台“真机”的标识；同一邮箱每次得到相同结果。"""
+    """按账号稳定地生成一套标识；同一邮箱每次得到相同结果。
+
+    机型固定为 Google 官方 Pixel 8 Pro：代号必须能被 Play 认证识别，不能自造。
+    """
     seed = email.strip().lower()
-    digest = hashlib.sha256(f"device-identity:{seed}".encode("utf-8")).hexdigest()
-    brand, manufacturer, model, device, product = DEVICE_MODELS[int(digest[:8], 16) % len(DEVICE_MODELS)]
     imei = "35" + _decimal_digits(seed + ":imei", 12)
-    imei += _luhn_tail(imei)
-    meid_hex = hashlib.sha256(f"{seed}:meid".encode("utf-8")).hexdigest()[:14]
-    meid = "A" + "".join(
-        SERIAL_ALPHABET[int(c, 16) % 16] for c in meid_hex
-    )
-    android_id = hashlib.sha256(f"{seed}:android-id".encode("utf-8")).hexdigest()[:16]
-    bt = hashlib.sha256(f"{seed}:bt".encode("utf-8")).hexdigest()[:6]
-    bluetooth = "02:00:00:" + ":".join(bt[i:i + 2] for i in range(0, 6, 2))
-    wifi = hashlib.sha256(f"{seed}:wifi".encode("utf-8")).hexdigest()
-    # 第一字节的第二位清零并置本地管理位，看起来像设备厂分配的随机 MAC。
-    wifi_mac = f"{int(wifi[:2], 16) & 0xFE | 0x02:02x}:" + ":".join(wifi[i:i + 2] for i in range(2, 12, 2))
-    letters = hashlib.sha256(f"{seed}:serial".encode("utf-8")).hexdigest().upper()
-    serial = "".join(SERIAL_ALPHABET[int(c, 16) % len(SERIAL_ALPHABET)] for c in letters[:12])
+    meid_hex = _digest(f"{seed}:meid").hex()[:14]
+    bluetooth_bytes = _digest(f"{seed}:bt")[:3]
+    wifi_bytes = _digest(f"{seed}:wifi")
+    # 两个 MAC 的首字节都清低位再置本地管理位：像设备厂按批次分配的地址。
+    bluetooth = "0" + "2:00:00:" + ":".join(f"{b:02x}" for b in bluetooth_bytes)
+    wifi_mac = ":".join(f"{b:02x}" for b in _local_mac(wifi_bytes))
+    serial_bytes = _digest(f"{seed}:serial").hex().upper()
     return DeviceIdentity(
-        brand=brand, manufacturer=manufacturer, model=model, device=device, product=product,
-        serial=serial, imei=imei, meid=meid, android_id=android_id,
-        bluetooth=bluetooth, wifi_mac=wifi_mac,
+        brand="google", manufacturer="Google", model=DEVICE_MODEL, device="husky",
+        serial="".join(SERIAL_ALPHABET[int(c, 16) % len(SERIAL_ALPHABET)] for c in serial_bytes[:12]),
+        imei=imei + _luhn_tail(imei),
+        meid="A" + "".join(SERIAL_ALPHABET[int(c, 16) % 16] for c in meid_hex),
+        android_id=_digest(f"{seed}:android-id").hex()[:16],
+        bluetooth=bluetooth,
+        wifi_mac=wifi_mac,
     )
+
+
+def _local_mac(raw: bytes) -> bytes:
+    first = (raw[0] | 0x02) & 0xFE
+    return bytes([first, *raw[1:6]])
+
+
+def _varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _field(number: int, payload: bytes) -> bytes:
+    """protobuf 的 length-delimited 字段。"""
+    return _varint(number << 3 | 2) + _varint(len(payload)) + payload
+
+
+def checkin_request(identity: DeviceIdentity, account: str) -> bytes:
+    """最小可用的 checkin 请求：account、设备 id、型号、系统版本、时间区。"""
+    request = _field(1, b"2.0")
+    request += _field(2, identity.android_id.encode())
+    request += _field(4, _field(1, identity.device.encode()))
+    request += _field(4, _field(2, identity.model.encode()))
+    request += _field(4, _field(3, b"google"))
+    request += _field(4, _field(5, SYSTEM_IMAGE_TARGET.encode()))
+    request += _field(6, account.strip().lower().encode())
+    return request
+
+
+def parse_checkin_response(data: bytes) -> dict:
+    """取 checkin 响应里设备档案的文本字段；未知字段直接跳过。"""
+    def read_varint(buf: bytes, pos: int) -> tuple[int, int]:
+        value = shift = 0
+        while True:
+            byte = buf[pos]
+            pos += 1
+            value |= (byte & 0x7F) << shift
+            if not byte & 0x80:
+                return value, pos
+            shift += 7
+
+    def walk(buf: bytes) -> list[tuple[int, bytes]]:
+        fields = []
+        pos = 0
+        while pos < len(buf):
+            tag, pos = read_varint(buf, pos)
+            number, wire = tag >> 3, tag & 7
+            if wire == 2:
+                length, pos = read_varint(buf, pos)
+                payload = buf[pos:pos + length]
+                pos += length
+            elif wire == 0:
+                _, pos = read_varint(buf, pos)
+                payload = b""
+            else:
+                break
+            fields.append((number, payload))
+        return fields
+
+    profile = {}
+    for number, payload in walk(data):
+        if number != 1:
+            continue
+        for sub_number, value in walk(payload):
+            profile[f"checkin_{sub_number}"] = value.hex()
+    return profile
+
+
+def device_profile(account: str, *, timeout: float = 20.0) -> dict:
+    """向 Google check-in 取一份按账号的设备档案；失败时返回空字典，不阻断启动。"""
+    import urllib.request
+
+    identity = device_identity(account)
+    request = urllib.request.Request(
+        CHECKIN_URL, data=checkin_request(identity, account),
+        headers={"User-Agent": CHECKIN_USER_AGENT},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return parse_checkin_response(response.read())
+
+
+def save_device_profile(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_device_profile(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _env_int(name: str, default: int, low: int, high: int) -> int:
@@ -428,10 +522,21 @@ def avd_dir(paths: AndroidPaths, email: str) -> Path:
     return paths.avd / f"{avd_name(email)}.avd"
 
 
-def avd_config(name: str, identity: DeviceIdentity | None = None) -> str:
+SCREEN_KEYS = ("hw.lcd.width", "hw.lcd.height", "hw.lcd.density")
+
+
+def avd_config(name: str, identity: DeviceIdentity | None = None,
+               screen: tuple[int, int, int] | None = None) -> str:
+    """账号 AVD 配置：官方可认证机型 + 账号自己的标识。
+
+    设备代号必须是 Google 官方 profile（当前 Pixel 8 Pro / husky）：模拟器内核按它
+    写 ro.product.*，Play 认证拿 (代号, 镜像, 系统指纹) 去查机型；改代号就会在商店
+    报设备认证失败。屏幕尺寸首次启动取环境变量，之后随账号长期保留。
+    """
     identity = identity or device_identity(name)
     cores = _env_int("ANDROID_EMULATOR_CORES", 4, 1, 16)
     ram = _env_int("ANDROID_EMULATOR_RAM_MB", 2048, 1024, 16384)
+    width, height, density = screen or (720, 1600, 320)
     lines = {
         "AvdId": name,
         "avd.ini.displayname": identity.model,
@@ -440,10 +545,9 @@ def avd_config(name: str, identity: DeviceIdentity | None = None) -> str:
         "hw.cpu.arch": "x86_64",
         "hw.cpu.ncore": str(cores),
         "hw.ramSize": str(ram),
-        "hw.lcd.width": str(DEVICE_WIDTH),
-        "hw.lcd.height": str(DEVICE_HEIGHT),
-        "hw.lcd.density": str(DEVICE_DENSITY),
-        # 真机设备代号：模拟器在 Linux 上把它写进 ro.product.device，覆盖掉 sdk_gphone。
+        "hw.lcd.width": str(width),
+        "hw.lcd.height": str(height),
+        "hw.lcd.density": str(density),
         "hw.device.name": identity.device,
         "hw.device.manufacturer": identity.manufacturer,
         "hw.manufacturer": identity.manufacturer,
@@ -455,10 +559,11 @@ def avd_config(name: str, identity: DeviceIdentity | None = None) -> str:
         "hw.mainKeys": "no",
         "hw.gpu.enabled": "yes",
         "hw.gpu.mode": "swiftshader_indirect",
-        "hw.audioInput": "no",
-        "hw.audioOutput": "no",
-        "hw.camera.back": "none",
-        "hw.camera.front": "none",
+        # 真机都有扬声器、麦克风和前后摄像头；"none" 本身就是模拟器特征。
+        "hw.audioInput": "yes",
+        "hw.audioOutput": "yes",
+        "hw.camera.back": "emulated",
+        "hw.camera.front": "emulated",
         "showDeviceFrame": "no",
         "disk.dataPartition.size": "8G",
         "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
@@ -472,85 +577,49 @@ def avd_config(name: str, identity: DeviceIdentity | None = None) -> str:
     return "".join(f"{k}={v}\n" for k, v in lines.items())
 
 
+def existing_screen(device: Path) -> tuple[int, int, int] | None:
+    """读已存在 AVD 的屏幕参数；没有完整的三项时返回 None。"""
+    path = device / "config.ini"
+    try:
+        values = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key in SCREEN_KEYS and value.isdigit():
+                values[key] = int(value)
+    except OSError:
+        return None
+    if len(values) != len(SCREEN_KEYS):
+        return None
+    return values["hw.lcd.width"], values["hw.lcd.height"], values["hw.lcd.density"]
+
+
 def guest_properties(identity: DeviceIdentity) -> list[tuple[str, str]]:
-    """开机后经 adb 写入客户机的属性：(属性名, 值)。顺序就是写入顺序。"""
-    brand = identity.brand
-    device = identity.device
-    fingerprint = (
-        f"{brand}/{identity.product}/{device}:14/UQ1A.{identity.android_id[:6].upper()}.001/"
-        f"{identity.android_id}:user/release-keys"
-    )
+    """开机后经 adb 补写的属性 (属性名, 值)。
+
+    Android 16+ 把 ro.* 收归 init 所有，shell 用户的 setprop 会被拒；这里只保留
+    能改的标识与状态类属性，最终以设备上的真实效果为准。
+    """
     return [
-        ("ro.product.brand", brand),
-        ("ro.product.system.brand", brand),
-        ("ro.product.vendor.brand", brand),
-        ("ro.product.odm.brand", brand),
-        ("ro.product.product.brand", brand),
-        ("ro.product.system_ext.brand", brand),
-        ("ro.product.model", identity.model),
-        ("ro.product.system.model", identity.model),
-        ("ro.product.vendor.model", identity.model),
-        ("ro.product.odm.model", identity.model),
-        ("ro.product.product.model", identity.model),
-        ("ro.product.system_ext.model", identity.model),
-        ("ro.product.device", device),
-        ("ro.product.system.device", device),
-        ("ro.product.vendor.device", device),
-        ("ro.product.odm.device", device),
-        ("ro.product.product.device", device),
-        ("ro.product.system_ext.device", device),
-        ("ro.product.name", identity.product),
-        ("ro.product.system.name", identity.product),
-        ("ro.product.vendor.name", identity.product),
-        ("ro.product.odm.name", identity.product),
-        ("ro.product.product.name", identity.product),
-        ("ro.product.system_ext.name", identity.product),
-        ("ro.product.manufacturer", identity.manufacturer),
-        ("ro.product.system.manufacturer", identity.manufacturer),
-        ("ro.product.vendor.manufacturer", identity.manufacturer),
-        ("ro.product.odm.manufacturer", identity.manufacturer),
-        ("ro.product.product.manufacturer", identity.manufacturer),
-        ("ro.product.system_ext.manufacturer", identity.manufacturer),
-        ("ro.product.board", device),
-        ("ro.board.platform", device),
-        ("ro.fingerprint", fingerprint),
-        ("ro.build.fingerprint", fingerprint),
-        ("ro.build.product", device),
-        ("ro.build.brand", brand),
-        ("ro.build.model", identity.model),
-        ("ro.build.device", device),
-        ("ro.build.manufacturer", identity.manufacturer),
-        ("ro.build.tags", "release-keys"),
-        ("ro.build.type", "user"),
-        ("ro.debuggable", "0"),
-        ("ro.secure", "1"),
-        ("ro.adb.secure", "1"),
-        ("service.adb.root", "0"),
-        ("ro.kernel.qemu", "0"),
-        ("ro.boot.qemu", "0"),
-        ("ro.hardware.egl", "adreno"),
-        ("ro.hardware.vulkan", "adreno"),
-        ("ro.setupwizard.mode", "DISABLED"),
-        ("ro.boot.verifiedbootstate", "green"),
-        ("ro.boot.flash.locked", "1"),
-        ("ro.boot.vbmeta.device_state", "locked"),
-        ("ro.boot.warranty_bit", "0"),
-        ("ro.warranty_bit", "0"),
-        ("ro.secureboot.lockstate", "locked"),
-        ("gsm.sim.operator.alpha", ""),
-        ("gsm.sim.operator.numeric", ""),
-        ("gsm.sim.operator.iso-country", ""),
-        ("gsm.operator.alpha", ""),
-        ("gsm.operator.numeric", ""),
         ("ro.serialno", identity.serial),
         ("ro.boot.serialno", identity.serial),
         ("gsm.sim.serial", identity.serial),
         ("gsm.sim.imei", identity.imei),
         ("gsm.sim.meid", identity.meid),
-        ("ro.boot.hardware", device),
-        ("ro.crypto.state", "encrypted"),
-        ("ro.crypto.type", "file"),
+        ("gsm.sim.operator.alpha", ""),
+        ("gsm.sim.operator.numeric", ""),
+        ("gsm.sim.operator.iso-country", ""),
+        ("gsm.operator.alpha", ""),
+        ("gsm.operator.numeric", ""),
+        ("ro.setupwizard.mode", "DISABLED"),
+        ("ro.debuggable", "0"),
+        ("ro.secure", "1"),
+        ("service.adb.root", "0"),
     ]
+
+
+def screen_size(paths: AndroidPaths, email: str) -> tuple[int, int, int]:
+    """账号 AVD 的屏幕 (宽, 高, 密度)；设备还没建时用默认值。"""
+    return existing_screen(avd_dir(paths, email) / SYSTEM_IMAGE_TARGET) or (720, 1600, 320)
 
 
 def ensure_avd(paths: AndroidPaths, email: str) -> str:
@@ -561,7 +630,12 @@ def ensure_avd(paths: AndroidPaths, email: str) -> str:
     # Android 14 的盘在账号目录顶层。跨系统版本使用独立目录，旧系统可原地回滚。
     device = directory / SYSTEM_IMAGE_TARGET
     device.mkdir(parents=True, exist_ok=True)
-    (device / "config.ini").write_text(avd_config(name, identity), encoding="utf-8")
+    screen = existing_screen(device) or (
+        _env_int("ANDROID_EMULATOR_WIDTH", 720, 480, 2160),
+        _env_int("ANDROID_EMULATOR_HEIGHT", 1600, 854, 3840),
+        _env_int("ANDROID_EMULATOR_DENSITY", 320, 160, 640),
+    )
+    (device / "config.ini").write_text(avd_config(name, identity, screen), encoding="utf-8")
     (directory / ACCOUNT_FILE).write_text(json.dumps({"email": email}), encoding="utf-8")
     (directory / IDENTITY_FILE).write_text(
         json.dumps({"email": email, **identity.as_dict()}, ensure_ascii=False, indent=2),

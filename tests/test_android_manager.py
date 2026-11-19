@@ -143,7 +143,7 @@ def _mgr(tmp_path, **kw):
         gateways.append(g)
         return g
 
-    def fitter_fn(display):
+    def fitter_fn(display, email=""):
         f = FakeFitter(display)
         fitters.append(f)
         return f
@@ -156,6 +156,7 @@ def _mgr(tmp_path, **kw):
         wait_display_fn=lambda display: None, wait_web_fn=lambda host, port: None,
         clear_display_fn=lambda display: None, window_fitter_fn=fitter_fn,
         kvm_fn=kw.pop("kvm_fn", lambda: True), reap_fn=kw.pop("reap_fn", lambda owner: 0),
+        profile_fn=kw.pop("profile_fn", lambda email: {"checkin_1": "00"}),
         poll_interval=0.01, **kw,
     )
     m.test_launcher, m.test_adb, m.test_gateways, m.test_fitters = launcher, adb, gateways, fitters
@@ -210,9 +211,8 @@ def test_start_boots_emulator_through_account_proxy(tmp_path):
     assert [serial for serial, _ in m.test_adb.identities] == [SERIAL]
     props = dict(m.test_adb.identities[0][1])
     identity = sdk.device_identity("a@x.com")
-    assert props["ro.product.model"] == identity.model
     assert props["ro.serialno"] == identity.serial
-    assert props["ro.boot.verifiedbootstate"] == "green"
+    assert props["gsm.sim.imei"] == identity.imei
     m.stop()
 
 
@@ -355,6 +355,32 @@ def test_install_delegates_to_installer(tmp_path):
     m.install()
     assert installer.starts == 1
     assert m.status()["install"]["state"] == "missing"
+
+
+def test_profile_fetch_failure_keeps_running(tmp_path):
+    def broken(email):
+        raise OSError("offline")
+
+    m = _mgr(tmp_path, profile_fn=broken)
+    m.start(email="a@x.com", proxy=PROXY, idle_timeout_s=0)
+    assert _wait_phase(m, "running")["phase"] == "running"
+    assert m.status()["last_error"] == ""
+    assert not (sdk.avd_dir(m.paths, "a@x.com") / sdk.DEVICE_PROFILE_FILE).exists()
+    m.stop()
+
+
+def test_profile_is_cached_for_a_week(tmp_path):
+    calls = []
+    m = _mgr(tmp_path, profile_fn=lambda email: calls.append(email) or {"checkin_1": "ab"})
+    m.start(email="a@x.com", proxy=PROXY, idle_timeout_s=0)
+    _wait_phase(m, "running")
+    m.stop()
+    profile = sdk.avd_dir(m.paths, "a@x.com") / sdk.DEVICE_PROFILE_FILE
+    assert sdk.load_device_profile(profile) == {"checkin_1": "ab"}
+    m.start(email="a@x.com", proxy=PROXY, idle_timeout_s=0)
+    _wait_phase(m, "running")
+    m.stop()
+    assert calls == ["a@x.com"]
 
 
 def test_emulator_argv_without_timezone(tmp_path):

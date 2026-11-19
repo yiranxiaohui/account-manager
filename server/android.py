@@ -235,7 +235,7 @@ class AndroidManager:
     def __init__(self, data_dir: Path, *, now_fn, launcher=None, installer=None, adb=None,
                  gateway_fn=None, timezone_fn=None, wait_display_fn=None, wait_web_fn=None,
                  clear_display_fn=None, window_fitter_fn=None, kvm_fn=None, reap_fn=None,
-                 display=DISPLAY, web_port=WEB_PORT, boot_timeout_s=BOOT_TIMEOUT_S,
+                 profile_fn=None, display=DISPLAY, web_port=WEB_PORT, boot_timeout_s=BOOT_TIMEOUT_S,
                  poll_interval=2.0):
         self.paths = android_sdk.AndroidPaths(Path(data_dir) / "android")
         self.owner = str(self.paths.root.resolve())
@@ -272,15 +272,15 @@ class AndroidManager:
         if window_fitter_fn is None:
             from server.window_fit import WindowFitter, plan_emulator_fit
 
-            device = (android_sdk.DEVICE_WIDTH, android_sdk.DEVICE_HEIGHT)
-
-            def window_fitter_fn(display):
+            def window_fitter_fn(display, email=""):
+                width, height, _ = android_sdk.screen_size(self.paths, email)
                 return WindowFitter(
                     display,
-                    planner=lambda root, wins: plan_emulator_fit(root, wins, device),
+                    planner=lambda root, wins: plan_emulator_fit(root, wins, (width, height)),
                 ).start()
         self._window_fitter_fn = window_fitter_fn
         self._kvm = kvm_fn or kvm_available
+        self._profile_fn = profile_fn or android_sdk.device_profile
         self.display = display
         self.web_port = web_port
         self.boot_timeout_s = boot_timeout_s
@@ -376,6 +376,7 @@ class AndroidManager:
         try:
             self._reap_stale()
             self.adb.ensure_key()
+            self._refresh_device_profile(session.email)
             avd = android_sdk.ensure_avd(self.paths, session.email)
             self._check(session)
             self._register(session, "gateway", self._gateway_fn(session.proxy))
@@ -420,7 +421,7 @@ class AndroidManager:
                     argv, env=android_env(self.paths, self.display, self.owner),
                     stdout=log_file,
                 ))
-            self._register(session, "fitter", self._window_fitter_fn(self.display))
+            self._register(session, "fitter", self._window_fitter_fn(self.display, session.email))
             with self._lock:
                 if session.cancelled.is_set():
                     raise _Cancelled()
@@ -441,6 +442,20 @@ class AndroidManager:
             message = str(exc) or type(exc).__name__
             console.log(f"Android 模拟器启动失败：{message}")
             self._fail(session, f"启动失败：{message}")
+
+    def _refresh_device_profile(self, email: str) -> None:
+        """向 Google check-in 取设备档案并存进账号目录；失败只记日志，不阻断启动。"""
+        path = android_sdk.avd_dir(self.paths, email) / android_sdk.DEVICE_PROFILE_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and time.time() - path.stat().st_mtime < 7 * 24 * 3600:
+            return
+        try:
+            payload = self._profile_fn(email)
+        except Exception as exc:  # noqa: BLE001
+            console.log(f"Android 设备档案获取失败（沿用已有档案）：{exc}")
+            return
+        if payload:
+            android_sdk.save_device_profile(path, payload)
 
     def _wait_boot(self, session: _Session) -> None:
         deadline = time.monotonic() + self.boot_timeout_s

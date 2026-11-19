@@ -169,6 +169,7 @@ def test_avd_name_is_stable_and_safe():
 def test_device_identity_is_stable_and_looks_like_a_phone():
     a = sdk.device_identity("User+tag@Example.com")
     assert a == sdk.device_identity(" user+tag@example.com ")
+    assert (a.brand, a.manufacturer, a.model, a.device) == ("google", "Google", "Pixel 8 Pro", "husky")
     assert len(a.serial) == 12 and a.serial.isalnum()
     assert len(a.imei) == 15 and a.imei.isdigit()
     # Luhn 校验位：从右往左隔位翻倍，总和能被 10 整除。
@@ -177,25 +178,39 @@ def test_device_identity_is_stable_and_looks_like_a_phone():
         digit = int(ch) * (2 if pos % 2 else 1)
         total += digit - 9 if digit > 9 else digit
     assert total % 10 == 0
-    assert a.model in {m[2] for m in sdk.DEVICE_MODELS}
+    assert len(a.meid) == 15
+    assert len(a.android_id) == 16
+    assert len(a.wifi_mac.split(":")) == 6 and len(a.bluetooth.split(":")) == 6
+    assert int(a.wifi_mac[:2], 16) & 0x02  # 本地管理位：像批次分配的随机 MAC
     assert sdk.device_identity("other@example.com") != a
     assert "emulator" not in (a.serial + a.model).lower()
 
 
-def test_guest_properties_hide_emulator_markers():
+def test_avd_uses_official_profile_and_device_hardware():
     identity = sdk.device_identity("a@x.com")
-    props = dict(sdk.guest_properties(identity))
-    assert props["ro.product.model"] == identity.model
-    assert props["ro.product.device"] == identity.device
-    assert props["ro.product.brand"] == identity.brand
-    assert props["ro.serialno"] == identity.serial
-    assert props["ro.boot.serialno"] == identity.serial
-    assert props["ro.kernel.qemu"] == "0"
-    assert props["ro.debuggable"] == "0"
-    assert props["ro.boot.verifiedbootstate"] == "green"
-    assert props["ro.boot.flash.locked"] == "1"
-    assert "/" + identity.device + ":" in props["ro.build.fingerprint"]
-    assert "user/release-keys" in props["ro.build.fingerprint"]
+    lines = dict(line.split("=", 1) for line in sdk.avd_config("acct_x", identity).splitlines())
+    # 代号必须是官方 profile：Play 认证不认识自造设备代号。
+    assert lines["hw.device.name"] == "husky"
+    assert lines["hw.model"] == "Pixel 8 Pro"
+    # 真机有摄像头和音频；"none" 是模拟器特征。
+    assert lines["hw.camera.back"] != "none"
+    assert lines["hw.audioOutput"] == "yes"
+
+
+def test_existing_screen_is_preserved_across_refresh(tmp_path, monkeypatch):
+    paths = sdk.AndroidPaths(tmp_path / "android")
+    monkeypatch.setenv("ANDROID_EMULATOR_WIDTH", "1080")
+    monkeypatch.setenv("ANDROID_EMULATOR_HEIGHT", "2400")
+    monkeypatch.setenv("ANDROID_EMULATOR_DENSITY", "420")
+    sdk.ensure_avd(paths, "a@x.com")
+    assert sdk.screen_size(paths, "a@x.com") == (1080, 2400, 420)
+    monkeypatch.setenv("ANDROID_EMULATOR_WIDTH", "720")
+    monkeypatch.setenv("ANDROID_EMULATOR_HEIGHT", "1600")
+    monkeypatch.setenv("ANDROID_EMULATOR_DENSITY", "320")
+    sdk.ensure_avd(paths, "a@x.com")
+    assert sdk.screen_size(paths, "a@x.com") == (1080, 2400, 420)
+    identity = json.loads((sdk.avd_dir(paths, "a@x.com") / sdk.IDENTITY_FILE).read_text())
+    assert identity["imei"] == sdk.device_identity("a@x.com").imei
 
 
 def test_ensure_avd_writes_config_and_pointer(tmp_path, monkeypatch):
@@ -254,3 +269,17 @@ def test_list_envs_skips_broken_dirs(tmp_path):
     (paths.avd / "acct_bad.avd" / sdk.ACCOUNT_FILE).write_text("{")
     assert sdk.list_envs(paths) == []
     assert json.loads(json.dumps(sdk.list_envs(sdk.AndroidPaths(tmp_path / "none")))) == []
+
+
+def test_checkin_request_carries_device_fields():
+    identity = sdk.device_identity("a@x.com")
+    body = sdk.checkin_request(identity, "a@x.com")
+    assert b"Pixel 8 Pro" in body and b"husky" in body and identity.android_id.encode() in body
+
+
+def test_profile_is_cached_per_account(tmp_path):
+    path = tmp_path / "avd" / "acct_x.avd" / sdk.DEVICE_PROFILE_FILE
+    path.parent.mkdir(parents=True)
+    sdk.save_device_profile(path, {"checkin_1": "ab"})
+    assert sdk.load_device_profile(path) == {"checkin_1": "ab"}
+    assert sdk.load_device_profile(tmp_path / "missing.json") == {}

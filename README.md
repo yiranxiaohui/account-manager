@@ -127,14 +127,16 @@ Selkies 推到网页（`/android.html`），可以在里面自行安装和使用
 - **每个账号一台独立的虚拟设备**，数据盘长期保留在 `data/android/avd/`（每台 1～3 GB，随用随长），
   停止后再启动仍是上次的状态。Android 17 使用账号目录下的 `android-37.2/` 数据盘。
   首次启动新版会创建独立设备，原 Android 14 数据盘保留在原位。账号改邮箱或删除时会一并处理两代数据。
-- **设备标识伪装**：每个账号按邮箱稳定生成一套真机标识——机型（Pixel 8 / Pixel 8 Pro / Pixel 7 /
-  Galaxy S 系列 / OnePlus）、品牌、厂商、序列号、IMEI（带 Luhn 校验位）、MEID、Android ID、
-  蓝牙和 Wi-Fi MAC，保存在 `data/android/avd/<账号>/identity.json`，同一账号每次启动都不变。
-  机型同时写进 AVD 的 `config.ini`（设备代号覆盖 `sdk_gphone`），开机后经 adb 补写
-  `ro.product.*`、`ro.build.*`、`ro.serialno`、`gsm.sim.imei` 等属性，并把
-  `ro.kernel.qemu` / `ro.boot.qemu` 等模拟器标记改为真机值、将启动状态标为已验证的锁定系统。
-  注意：系统分区是只读的，且 adb 以 shell 用户写入，部分系统属性在重启后会恢复，Play Integrity
-  这类服务端判定的完整性检测无法仅靠客户端属性完全绕过。
+- **设备标识伪装**：每个账号按邮箱稳定生成一套标识——序列号、IMEI（带 Luhn 校验位）、
+  MEID、Android ID、蓝牙和 Wi-Fi MAC，保存在 `data/android/avd/<账号>/identity.json`，
+  同一账号每次启动都不变；开机后经 adb 尽力补写 `ro.serialno`、`gsm.sim.imei` 等。
+  AVD 固定使用 Google 官方可认证的 Pixel 8 Pro 档案（代号 `husky`，摄像头、音频等
+  硬件项按真机开启），并在首次启动时向 Google 官方 check-in 接口取一份设备档案存入
+  `device_profile.json`（7 天内复用）。
+  注意：Android 16+ 的 `ro.product.*`、`ro.build.*` 由系统镜像的 `build.prop` 与 boot
+  阶段的 init 写死，adb shell 改不了，模拟器内核仍会暴露出 `ranchu`、`qemu` 等痕迹；
+  Play Integrity 这类服务端判定的完整性检测无法仅靠客户端属性绕过，Play 商店的
+  “设备未通过认证”提示也可能出现在任意非官方机型上。
 - **同一时刻只运行一台**。冷启动约 30～90 秒，画面页会显示启动进度；不存快照（快照约等于
   内存大小，每个账号一份太占盘）。点「停止」时先让系统把缓存写回数据盘再关机。
 - **只走账号代理**：未绑定代理的账号不能启动。模拟器的全部 TCP 经本地 HTTP 代理转给账号代理
