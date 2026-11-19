@@ -149,3 +149,15 @@ def test_takeover_roundtrip(tmp_path):
     raw = yaml.safe_load(p.read_text(encoding="utf-8"))
     assert raw["takeover"]["enabled"] is False
     assert raw["takeover"]["idle_timeout_min"] == 30
+
+
+def test_android_idle_timeout_default_and_roundtrip(tmp_path):
+    from server.config_store import load_config, save_config
+    import yaml
+
+    assert load_config(tmp_path / "nope.yaml").android_idle_timeout_min == 30
+    p = tmp_path / "config.yaml"
+    save_config(p, {"android_idle_timeout_min": 0})
+    assert load_config(p).android_idle_timeout_min == 0
+    raw = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert raw["android"]["idle_timeout_min"] == 0

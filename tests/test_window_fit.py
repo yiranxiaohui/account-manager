@@ -14,6 +14,7 @@ from server.window_fit import (
     TopLevel,
     WindowFitter,
     fit_size,
+    plan_emulator_fit,
     plan_fit,
 )
 
@@ -66,6 +67,53 @@ def test_chromium_window_classes_are_recognised(wm_class):
 
 def test_plan_noop_before_client_connects():
     assert plan_fit(XVFB_MAX, [_win()]) == []
+
+
+# ---- Android 模拟器窗口 ----
+
+DEVICE = (720, 1600)
+
+
+def _emu(id=10, name="Android Emulator - acct_x:5580", geo=(100, 100, 720, 1600),
+         viewable=True):
+    return TopLevel(id, "Emulator", viewable, False, *geo, name=name)
+
+
+def _toolbar(width=54):
+    return TopLevel(11, "Emulator", True, False, 820, 100, width, 506, name="Emulator")
+
+
+def test_emulator_scaled_to_height_and_centered_with_toolbar():
+    plan = plan_emulator_fit((1280, 800), [_emu(), _toolbar()], DEVICE)
+    # 高度铺满 800，宽按 720:1600 等比 = 360；连同 54px 工具栏整体水平居中
+    assert plan == [(10, ((1280 - 360 - 54) // 2, 0, 360, 800))]
+
+
+def test_emulator_limited_by_narrow_viewport():
+    plan = plan_emulator_fit((414, 900), [_emu(), _toolbar()], DEVICE)
+    (_, (x, y, w, h)), = plan
+    assert w == 414 - 54 and x == 0
+    assert h == int(1600 * (360 / 720)) and y == (900 - h) // 2
+
+
+def test_emulator_landscape_window_uses_rotated_ratio():
+    plan = plan_emulator_fit((1600, 900), [_emu(geo=(0, 0, 1600, 720)), _toolbar()], DEVICE)
+    (_, (x, y, w, h)), = plan
+    assert w > h
+    assert abs(w / h - 1600 / 720) < 0.01
+
+
+def test_emulator_fit_is_stable_within_tolerance():
+    root = (1280, 800)
+    (_, (x, y, w, h)), = plan_emulator_fit(root, [_emu(), _toolbar()], DEVICE)
+    assert plan_emulator_fit(root, [_emu(geo=(x + 1, y, w - 2, h + 1)), _toolbar()], DEVICE) == []
+
+
+def test_emulator_fit_skips_until_client_connects_and_ignores_other_windows():
+    assert plan_emulator_fit(XVFB_MAX, [_emu()], DEVICE) == []
+    others = [_toolbar(), _win(id=3), _emu(id=4, name="Extended Controls")]
+    assert plan_emulator_fit((1280, 800), others, DEVICE) == []
+    assert plan_emulator_fit((1280, 800), [_emu(viewable=False)], DEVICE) == []
 
 
 def test_fitter_stop_is_safe_without_start():

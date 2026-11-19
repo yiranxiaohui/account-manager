@@ -10,6 +10,7 @@ from server.config_store import Config, load_config
 from server.legacy_xray import migrate_register_proxy
 from server.runner import Runner
 from server.takeover import TakeoverManager
+from server.android import AndroidManager
 
 
 DB_FILENAME = "account-manager.db"
@@ -51,6 +52,7 @@ class AppState:
             self.secret = secrets.token_hex(32)
             secret_path.write_text(self.secret, encoding="utf-8")
         self.takeover = TakeoverManager(now_fn=now_fn)
+        self.android = AndroidManager(self.data_dir, now_fn=now_fn)
 
     def config(self) -> Config:
         return load_config(self.config_path)

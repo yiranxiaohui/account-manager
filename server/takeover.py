@@ -44,7 +44,8 @@ def selkies_bin() -> str:
     return os.environ.get(SELKIES_BIN_ENV) or "selkies"
 
 
-def selkies_argv(port: int) -> list[str]:
+def selkies_argv(port: int, *, subfolder: str = "/vnc",
+                 title: str = "Account Manager 接管") -> list[str]:
     """Selkies 只做「把这块屏推给网页」：
 
     - 只绑 127.0.0.1，路径前缀 /vnc，外层 Nginx + 面板 Cookie 负责鉴权，自身不再要密码；
@@ -60,7 +61,7 @@ def selkies_argv(port: int) -> list[str]:
         selkies_bin(),
         "--addr", "127.0.0.1",
         "--port", str(port),
-        "--subfolder", "/vnc",
+        "--subfolder", subfolder,
         "--mode", "websockets",
         f"--enable-basic-auth={off}",
         f"--audio-enabled={off}",
@@ -81,7 +82,7 @@ def selkies_argv(port: int) -> list[str]:
         "--clipboard-seamless=true",
         "--enable-resize=true",
         "--framerate=30,8-60",
-        "--ui-title=Account Manager 接管",
+        f"--ui-title={title}",
         f"--ui-show-logo={off}",
         f"--ui-sidebar-show-apps={off}",
         f"--ui-sidebar-show-files={off}",
@@ -108,8 +109,11 @@ class ProcessLauncher:
     占着 :100 和 Web 端口的孤儿进程。
     """
 
-    def spawn(self, argv: list[str], env: dict | None = None):
-        return subprocess.Popen(argv, env=env)
+    def spawn(self, argv: list[str], env: dict | None = None, stdout=None):
+        """stdout 给一个已打开的文件时，子进程的标准输出和错误都写进去。"""
+        if stdout is None:
+            return subprocess.Popen(argv, env=env)
+        return subprocess.Popen(argv, env=env, stdout=stdout, stderr=subprocess.STDOUT)
 
 
 def _terminate(proc) -> None:

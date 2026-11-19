@@ -12,6 +12,8 @@ FROM python:3.13-slim
 # 这里只装 Xvfb（注册/接管的虚拟显示）、字体和面板运行所需的服务。
 # Mesa 软件 GL 显式安装（以前由其他软件包间接带入），保持虚拟屏上浏览器的 GL 环境不变；
 # libgbm/pixman/xkbcommon/drm 是 Selkies 编码库 pixelflux 的系统依赖。
+# libpulse0/libx11-xcb1 是 Android 模拟器窗口版 qemu 的动态依赖（模拟器本体不在镜像里，
+# 由面板按需下载到数据目录，见 server/android_sdk.py）。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     libgl1-mesa-dri \
@@ -20,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpixman-1-0 \
     libxkbcommon0 \
     libdrm2 \
+    libpulse0 \
+    libx11-xcb1 \
     fonts-liberation \
     fonts-unifont \
     nginx \

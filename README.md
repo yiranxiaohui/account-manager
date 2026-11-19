@@ -118,6 +118,43 @@ docker compose up -d
   `sk-…@sk-import.local` 占位标识。实际登录邮箱与填写的不同时会提示。
 - 入库后接管会话即归属该账号，可继续使用「重新自动登录」等功能。
 - 普通接管里手动重新登录后，新的 sk 同样会被自动取出并回写。
+
+## Android 模拟器（每个账号一台，走账号代理）
+
+账号列表每行的手机图标会为该账号启动一台 Android 14（带 Google Play）模拟器，画面同样由
+Selkies 推到网页（`/android.html`），可以在里面自行安装和使用 Claude App 等应用。
+
+- **每个账号一台独立的虚拟设备**，数据盘长期保留在 `data/android/avd/`（每台 1～3 GB，随用随长），
+  停止后再启动仍是上次的状态。账号改邮箱时虚拟设备跟着迁移，删除账号时一并删除。
+- **同一时刻只运行一台**。冷启动约 30～90 秒，画面页会显示启动进度；不存快照（快照约等于
+  内存大小，每个账号一份太占盘）。点「停止」时先让系统把缓存写回数据盘再关机。
+- **只走账号代理**：未绑定代理的账号不能启动。模拟器的全部 TCP 经本地 HTTP 代理转给账号代理
+  （支持 socks5/socks5h/http/https，含认证）；DNS 由面板内置的假 DNS 应答，每个域名分到
+  `198.19.0.0/16` 里的假地址，连接时再换回域名交给代理远端解析（与 Clash 的 fake-ip 相同）。因此
+  DNS 不会从宿主泄露，宿主网关的 fake-ip 也不会干扰；发往域名的 UDP（如 QUIC）打到不可路由的假地址
+  自然失败，应用会回退到走代理的 TCP。只有硬编码 IP 的 UDP（如 WebRTC 的 STUN）仍会直连。
+  模拟器时区按代理出口 IP 设置。运行中更换账号代理，下次启动才生效。
+- **操作**：鼠标左键即触摸，滚轮可滚动；窗口右侧工具栏有电源、音量、旋转、返回/主页/多任务等按键。
+  键盘可直接输入英文；中文先在本机复制，再在模拟器里长按输入框粘贴（剪贴板双向同步）。
+- **空闲自动停止**：画面页每 20 秒续期，关闭后默认 30 分钟自动停止（`config.yaml` 的
+  `android.idle_timeout_min`，`0` 表示不自动停止）。
+- 与浏览器接管互不影响：模拟器用虚拟屏 `:101` 和另一个 Selkies（端口 14501，网页路径
+  `/android-vnc/`，同样经 Nginx 复用面板登录鉴权）。
+
+**运行环境按需下载**：模拟器和系统镜像不在镜像里。第一次启动时面板会提示从 Google 官方仓库
+下载（约 1.8 GB，解压后约 4 GB，放在 `data/android/sdk/`），版本、大小和 SHA-256 固定在
+`server/android_sdk.py`，下载完校验通过才安装；下载即表示同意 Android SDK 许可协议。
+
+**宿主要求**：
+
+- 必须有 KVM。容器要能读写 `/dev/kvm`：在 `docker-compose.yml` 里取消 `devices: ["/dev/kvm:/dev/kvm"]`
+  的注释。面板跑在 Proxmox 非特权 LXC 里时，还要先把宿主的 `/dev/kvm` 透传进 LXC（如
+  `pct set <vmid> -dev0 /dev/kvm,gid=<LXC 里 kvm 组的 gid>`，或在 LXC 配置里加
+  `lxc.cgroup2.devices.allow: c 10:232 rwm` 和对应的 `lxc.mount.entry`）。
+- 一台运行中的模拟器约占 3～4 GB 内存、默认 4 个 vCPU（容器环境变量 `ANDROID_EMULATOR_CORES`、
+  `ANDROID_EMULATOR_RAM_MB` 可调，默认 4 核 / 2048 MB 客户机内存）。
+- 假 DNS 默认监听 `127.0.53.1:53`（模拟器的 `-dns-server` 只能写 IP、端口固定 53），需要面板以 root
+  运行（容器默认如此）；地址可用 `ANDROID_DNS_HOST` 改。
 - 对应接口：`POST /api/takeover/manual`（`{email?, proxy_id?}`）、`POST /api/takeover/capture`。
 
 ## Claude OAuth 授权（sessionKey → access_token / refresh_token）

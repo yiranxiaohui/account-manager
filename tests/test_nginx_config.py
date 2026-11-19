@@ -9,7 +9,8 @@ def test_selkies_is_proxied_with_panel_auth():
 
     assert "location /vnc/" in config
     assert "location = /websockify" not in config
-    assert config.count("auth_request /_vnc_auth;") == 1
+    # 接管与 Android 模拟器两个 Selkies 画面都要经面板登录鉴权。
+    assert config.count("auth_request /_vnc_auth;") == 2
     block = config.split("location /vnc/ {", 1)[1].split("}", 1)[0]
     # Selkies 以 /vnc 为前缀运行，路径原样转发（proxy_pass 不带 URI）。
     assert "proxy_pass http://selkies;" in block
@@ -21,6 +22,31 @@ def test_selkies_is_proxied_with_panel_auth():
     assert "proxy_socket_keepalive on;" in block
     assert "proxy_buffering off;" in block
     assert "xpra" not in config.lower()
+
+
+def test_android_selkies_is_proxied_with_panel_auth():
+    config = (ROOT / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+
+    assert "server 127.0.0.1:14501;" in config
+    assert "location = /android-vnc {" in config
+    block = config.split("location /android-vnc/ {", 1)[1].split("}", 1)[0]
+    assert "auth_request /_vnc_auth;" in block
+    assert "proxy_pass http://selkies_android;" in block
+    assert "proxy_set_header Host $http_host;" in block
+    assert "proxy_set_header Upgrade $http_upgrade;" in block
+    assert "proxy_read_timeout 86400s;" in block
+    assert "proxy_buffering off;" in block
+
+
+def test_android_ports_match_manager():
+    from server import android
+
+    config = (ROOT / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+    assert f"server 127.0.0.1:{android.WEB_PORT};" in config
+    assert f"location {android.WEB_SUBFOLDER}/ {{" in config
+    viewer = (ROOT / "web" / "public" / "android.html").read_text(encoding="utf-8")
+    assert f'viewer.src = "{android.WEB_SUBFOLDER}/"' in viewer
+    assert "/api/android/heartbeat" in viewer
 
 
 def test_panel_listen_is_generated_by_entrypoint():

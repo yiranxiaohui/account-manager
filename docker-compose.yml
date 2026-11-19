@@ -5,6 +5,10 @@ services:
     ports: ["8790:8790"]   # 默认 HTTPS（自签证书存放在 data/tls/），见 README「Web 面板部署」
     # environment:
     #   PANEL_TLS: "off"     # 已由外层反代终结 HTTPS 时改回明文 HTTP
+    # Android 模拟器需要 KVM：宿主有 /dev/kvm 时取消注释（没有该设备时 Compose 会启动失败），
+    # 见 README「Android 模拟器」。
+    # devices:
+    #   - /dev/kvm:/dev/kvm
     volumes:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml

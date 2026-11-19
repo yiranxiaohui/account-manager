@@ -33,6 +33,8 @@ class Config:
     xui_nodes: tuple = ()
     takeover_enabled: bool = True
     takeover_idle_timeout_min: int = 15
+    # Android 模拟器：画面页关闭后多久自动停止（分钟，<=0 表示不自动停止）。
+    android_idle_timeout_min: int = 30
     # 开放 API（/api/v1/*）：独立于面板登录，用 API Key 鉴权；默认关闭。
     api_enabled: bool = False
     api_key: str = ""
@@ -62,6 +64,7 @@ def load_config(path: Path) -> Config:
     pr = xui.get("port_range") or [40000, 60000]
     nodes = tuple(_load_node(n) for n in (xui.get("nodes") or []))
     tk = raw.get("takeover", {}) or {}
+    ad = raw.get("android", {}) or {}
     api = raw.get("api", {}) or {}
     oa = raw.get("oauth", {}) or {}
     s2 = raw.get("sub2api", {}) or {}
@@ -84,6 +87,7 @@ def load_config(path: Path) -> Config:
         xui_nodes=nodes,
         takeover_enabled=bool(tk.get("enabled", True)),
         takeover_idle_timeout_min=int(tk.get("idle_timeout_min", 15)),
+        android_idle_timeout_min=int(ad.get("idle_timeout_min", 30)),
         api_enabled=bool(api.get("enabled", False)),
         api_key=str(api.get("key", "") or ""),
         oauth_auto_after_register=bool(oa.get("auto_after_register", False)),
@@ -105,6 +109,7 @@ _FIELD_MAP = {
     "register_proxy": ("register", "proxy"),
     "takeover_enabled": ("takeover", "enabled"),
     "takeover_idle_timeout_min": ("takeover", "idle_timeout_min"),
+    "android_idle_timeout_min": ("android", "idle_timeout_min"),
     "api_enabled": ("api", "enabled"),
     "api_key": ("api", "key"),
     "oauth_auto_after_register": ("oauth", "auto_after_register"),
@@ -145,8 +150,8 @@ def _save_config(path: Path, updates: dict) -> Config:
                 node["password"] = old_by_base.get(node["base_url"], {}).get("password", "")
             merged.append(node)
         cfg = replace(cfg, xui_nodes=tuple(merged))
-    out: dict = {"panel": {}, "anymail": {}, "register": {}, "xui": {}, "takeover": {}, "api": {},
-                 "oauth": {}, "sub2api": {}}
+    out: dict = {"panel": {}, "anymail": {}, "register": {}, "xui": {}, "takeover": {},
+                 "android": {}, "api": {}, "oauth": {}, "sub2api": {}}
     for field, (section, key) in _FIELD_MAP.items():
         out[section][key] = getattr(cfg, field)
     out["register"]["proxies"] = [dict(p) for p in cfg.saved_proxies]

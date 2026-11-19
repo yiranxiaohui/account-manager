@@ -251,4 +251,17 @@ export const api = {
     fetch("/api/takeover/relogin", { method: "POST" }).then(j),
 
   takeoverStatus: () => fetch("/api/takeover").then(j),
+
+  androidStatus: () => fetch("/api/android").then(j),
+
+  androidInstall: () => fetch("/api/android/install", { method: "POST" }).then(j),
+
+  androidStart: (email) =>
+    fetch("/api/android/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    }).then(j),
+
+  androidStop: () => fetch("/api/android/stop", { method: "POST" }).then(j),
 };

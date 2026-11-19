@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   ShieldQuestionMark,
   ShieldX,
+  Smartphone,
   Sparkles,
   Trash2,
   Upload,
@@ -47,6 +48,12 @@ import { ExportDialog } from "@/components/export-dialog";
 import { ImportDialog } from "@/components/import-dialog";
 import { ManualLoginDialog } from "@/components/manual-login-dialog";
 import { useOrgPicker } from "@/components/org-select-dialog";
+import {
+  ANDROID_VIEWER,
+  AndroidCallout,
+  AndroidInstallDialog,
+  useAndroid,
+} from "@/components/android";
 import { KEEP_PROXY, ProxySelect } from "@/components/proxy-select";
 import {
   AccountCreateDialog,
@@ -280,6 +287,8 @@ export default function Accounts({ attach, running, navigate }) {
   const [batchCheck, setBatchCheck] = useState(null); // {done, total, alive, failed}
   const orgPicker = useOrgPicker();
   const [takeover, setTakeover] = useState({ running: false, email: null });
+  const android = useAndroid();
+  const [androidInstallOpen, setAndroidInstallOpen] = useState(false);
   const [relogging, setRelogging] = useState(false);
   const [checking, setChecking] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -346,6 +355,7 @@ export default function Accounts({ attach, running, navigate }) {
   function refreshLists() {
     api.listAccounts().then(setAccounts).catch(() => {}).finally(() => setLoaded(true));
     api.takeoverStatus().then(setTakeover).catch(() => {});
+    android.refresh();
     api.getConfig().then((cfg) => setProxies(cfg.saved_proxies || [])).catch(() => {});
   }
 
@@ -709,12 +719,39 @@ export default function Accounts({ attach, running, navigate }) {
 
   const withSk = selectedVisible.filter((a) => a.session_key);
 
+  // Android 模拟器按钮：本账号在跑就打开画面；运行环境没装先弹安装确认；否则启动。
+  const androidAction = (a) => {
+    const st = android.status;
+    const hasEnv = (st.envs || []).includes(a.email);
+    if (st.running && st.email === a.email) {
+      return {
+        tip: `Android 模拟器${st.phase === "running" ? "运行中" : "启动中"}，点击打开画面`,
+        active: true,
+        onClick: () => window.open(ANDROID_VIEWER, "_blank", "noopener"),
+      };
+    }
+    if (st.running) return { tip: "已有其他账号的 Android 模拟器在运行，请先停止", disabled: true };
+    if (!a.proxy) return { tip: "Android 模拟器只走账号代理：请先为账号绑定代理", disabled: true };
+    if (st.install?.state === "installing") {
+      return { tip: "Android 运行环境安装中，请稍候", disabled: true };
+    }
+    if (st.install && !st.install.ready) {
+      return { tip: "启动 Android 模拟器（首次需先安装运行环境）", onClick: () => setAndroidInstallOpen(true) };
+    }
+    return {
+      tip: hasEnv
+        ? "启动该账号的 Android 模拟器（数据保留在上次的状态）"
+        : "为该账号创建并启动 Android 模拟器（走账号代理）",
+      onClick: () => android.start(a.email),
+    };
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         icon={Users}
         title="账号管理"
-        description="查看账号的注册、存活与 OAuth 状态，管理 sessionKey、代理和浏览器接管。"
+        description="查看账号的注册、存活与 OAuth 状态，管理 sessionKey、代理、浏览器接管与 Android 模拟器。"
         actions={
           <>
             {accounts.length > 0 && (
@@ -806,6 +843,8 @@ export default function Accounts({ attach, running, navigate }) {
           </m.div>
         )}
       </AnimatePresence>
+
+      <AndroidCallout android={android} />
 
       <Card className="gap-0 py-0">
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
@@ -966,6 +1005,21 @@ export default function Accounts({ attach, running, navigate }) {
                       )}
                       {/* 没有 sessionKey 的行补占位，让各行操作按钮列对齐 */}
                       {!a.session_key && <span aria-hidden="true" className="w-[5.5rem] shrink-0 max-md:hidden" />}
+                      {(() => {
+                        const act = androidAction(a);
+                        return (
+                          <TipButton
+                            variant={act.active ? "secondary" : "ghost"}
+                            size="icon-sm"
+                            tip={act.tip}
+                            className={cn(act.active && "text-success hover:text-success")}
+                            disabled={act.disabled}
+                            onClick={act.onClick}
+                          >
+                            <Smartphone />
+                          </TipButton>
+                        );
+                      })()}
                       <TipButton variant="ghost" size="icon-sm" tip={copiedEmail === a.email ? "已复制" : "复制账号信息"}
                         onClick={() => copyLine(a)}>
                         {copiedEmail === a.email ? <Check className="text-success" /> : <Copy />}
@@ -1195,6 +1249,11 @@ export default function Accounts({ attach, running, navigate }) {
         onStarted={() => api.takeoverStatus().then(setTakeover).catch(() => {})}
       />
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={refreshLists} />
+      <AndroidInstallDialog
+        open={androidInstallOpen}
+        onOpenChange={setAndroidInstallOpen}
+        android={android}
+      />
       {orgPicker.dialog}
     </div>
   );

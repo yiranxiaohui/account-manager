@@ -29,6 +29,8 @@ from server.config_store import CONFIG_LOCK, save_config, to_dict
 from server.deps import AppState, default_now
 from server.runner import RunnerBusy
 from server.takeover import TakeoverBusy, TakeoverError
+from server.android import AndroidBusy, AndroidError
+from server.android_sdk import InstallError as AndroidInstallError
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
@@ -453,7 +455,10 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
             raise HTTPException(status_code=400, detail="emails 必须是字符串数组")
         if not emails:
             raise HTTPException(status_code=400, detail="未选择任何账号")
+        _guard_android_running(emails)
         deleted = db.delete_accounts(state.conn, emails)
+        for email in emails:
+            _drop_android_env(email)
         return {"ok": True, "deleted": deleted}
 
     @app.post("/api/accounts/batch-proxy")
@@ -488,10 +493,15 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         if new_email != email:
             if state.takeover.status().get("email") == email:
                 raise HTTPException(status_code=409, detail="该账号正在接管，请先结束接管再改邮箱")
+            _guard_android_running([email])
             try:
                 db.rename_account(state.conn, email, new_email)
             except db.AccountExists:
                 raise HTTPException(status_code=409, detail="该邮箱的账号已存在") from None
+            try:
+                state.android.rename_env(email, new_email)
+            except (AndroidBusy, AndroidInstallError, OSError) as exc:
+                log(f"迁移 {email} 的 Android 环境失败：{exc}")
         if fields:
             db.update_account_fields(state.conn, new_email, fields)
         row = db.get_account(state.conn, new_email)
@@ -511,9 +521,27 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
 
     @app.delete("/api/accounts/{email}")
     def account_delete(email: str, _=Depends(require_auth)):
+        _guard_android_running([email])
         if not db.delete_account(state.conn, email):
             raise HTTPException(status_code=404, detail="账号不存在")
+        _drop_android_env(email)
         return {"ok": True}
+
+    def _guard_android_running(emails) -> None:
+        running = state.android.running_email()
+        if running and running in emails:
+            raise HTTPException(
+                status_code=409,
+                detail=f"「{running}」的 Android 模拟器正在运行，请先停止",
+            )
+
+    def _drop_android_env(email: str) -> None:
+        """账号删除后顺手删掉它的虚拟设备，释放数据盘。"""
+        try:
+            if state.android.delete_env(email):
+                log(f"已删除 {email} 的 Android 环境。")
+        except (AndroidBusy, OSError) as exc:
+            log(f"删除 {email} 的 Android 环境失败：{exc}")
 
     @app.post("/api/accounts/{email}/rerun")
     def rerun(email: str, _=Depends(require_auth)):
@@ -885,6 +913,60 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"ok": True}
 
+    @app.get("/api/android")
+    def android_status(_=Depends(require_auth)):
+        """Android 模拟器状态：运行环境是否安装、KVM 是否可用、当前会话与已建环境的账号。"""
+        return state.android.status()
+
+    @app.post("/api/android/install")
+    def android_install(_=Depends(require_auth)):
+        """后台下载安装模拟器与系统镜像（约 1.8 GB）；进度见 GET /api/android。"""
+        return state.android.install()
+
+    @app.post("/api/android/start")
+    async def android_start(request: Request, _=Depends(require_auth)):
+        """为账号启动 Android 模拟器。body: {email}。只走账号绑定的代理；立即返回，
+        开机进度看 GET /api/android 的 phase。"""
+        body = await _json_object(request)
+        email = body.get("email")
+        if not isinstance(email, str) or not email.strip():
+            raise HTTPException(status_code=400, detail="email 不能为空")
+        row = db.get_account(state.conn, email.strip())
+        if row is None:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        proxy = row.get("proxy") or ""
+        if not proxy:
+            raise HTTPException(
+                status_code=400,
+                detail="该账号没有绑定代理：模拟器只走账号代理，请先在账号里选择代理池中的代理",
+            )
+        cfg = state.config()
+        try:
+            return await asyncio.to_thread(
+                state.android.start,
+                email=row["email"],
+                proxy=proxy,
+                idle_timeout_s=cfg.android_idle_timeout_min * 60,
+            )
+        except AndroidBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except AndroidError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/android/stop")
+    async def android_stop(_=Depends(require_auth)):
+        stopped = await asyncio.to_thread(state.android.stop)
+        return {"ok": True, "stopped": stopped}
+
+    @app.post("/api/android/heartbeat")
+    def android_heartbeat(_=Depends(require_auth)):
+        """模拟器画面页存活心跳；续期空闲自动停止的计时器。"""
+        try:
+            state.android.touch()
+        except AndroidError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"ok": True}
+
     # 截图/日志工件：必须鉴权 + 防路径穿越（不能用裸 StaticFiles，mount 不继承 Depends）
     runs_dir = state.data_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -904,6 +986,7 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         # server 关闭/重启时兜底清理接管会话，避免 Xvfb/Selkies/浏览器变孤儿进程。
         # stop() 幂等，没在跑也安全。
         state.takeover.stop()
+        state.android.stop()
 
     open_api.register_open_api(
         app, state, start_registration=start_registration, account_rows=_account_rows,
