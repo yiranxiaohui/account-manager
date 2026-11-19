@@ -166,6 +166,38 @@ def test_avd_name_is_stable_and_safe():
     assert a != sdk.avd_name("other@example.com")
 
 
+def test_device_identity_is_stable_and_looks_like_a_phone():
+    a = sdk.device_identity("User+tag@Example.com")
+    assert a == sdk.device_identity(" user+tag@example.com ")
+    assert len(a.serial) == 12 and a.serial.isalnum()
+    assert len(a.imei) == 15 and a.imei.isdigit()
+    # Luhn 校验位：从右往左隔位翻倍，总和能被 10 整除。
+    total = 0
+    for pos, ch in enumerate(reversed(a.imei)):
+        digit = int(ch) * (2 if pos % 2 else 1)
+        total += digit - 9 if digit > 9 else digit
+    assert total % 10 == 0
+    assert a.model in {m[2] for m in sdk.DEVICE_MODELS}
+    assert sdk.device_identity("other@example.com") != a
+    assert "emulator" not in (a.serial + a.model).lower()
+
+
+def test_guest_properties_hide_emulator_markers():
+    identity = sdk.device_identity("a@x.com")
+    props = dict(sdk.guest_properties(identity))
+    assert props["ro.product.model"] == identity.model
+    assert props["ro.product.device"] == identity.device
+    assert props["ro.product.brand"] == identity.brand
+    assert props["ro.serialno"] == identity.serial
+    assert props["ro.boot.serialno"] == identity.serial
+    assert props["ro.kernel.qemu"] == "0"
+    assert props["ro.debuggable"] == "0"
+    assert props["ro.boot.verifiedbootstate"] == "green"
+    assert props["ro.boot.flash.locked"] == "1"
+    assert "/" + identity.device + ":" in props["ro.build.fingerprint"]
+    assert "user/release-keys" in props["ro.build.fingerprint"]
+
+
 def test_ensure_avd_writes_config_and_pointer(tmp_path, monkeypatch):
     monkeypatch.setenv("ANDROID_EMULATOR_CORES", "2")
     monkeypatch.setenv("ANDROID_EMULATOR_RAM_MB", "3072")

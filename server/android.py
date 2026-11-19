@@ -174,6 +174,21 @@ class AdbRunner:
             return False
         return out.strip() == "1"
 
+    def apply_identity(self, serial: str, properties: list[tuple[str, str]]) -> None:
+        """用一次 root shell 批量写属性，减少开机阶段的 adb 往返。
+
+        写失败（例如只读属性）不算错误：能写的尽力写，失败项静默跳过，不影响启动。
+        """
+        if not properties:
+            return
+        script = "\n".join(
+            f"setprop {name} '{value}' 2>/dev/null || true" for name, value in properties
+        )
+        try:
+            self.run("-s", serial, "shell", script, timeout=60)
+        except (AndroidError, subprocess.TimeoutExpired, OSError):
+            pass
+
     def shutdown(self, serial: str) -> None:
         """先让客户机把文件系统缓存写回数据盘，再经控制台关模拟器。"""
         for args, timeout in ((("shell", "sync"), 15), (("emu", "kill"), 10)):
@@ -411,6 +426,8 @@ class AndroidManager:
                     raise _Cancelled()
                 session.phase = "booting"
             self._wait_boot(session)
+            identity = android_sdk.device_identity(session.email)
+            self.adb.apply_identity(SERIAL, android_sdk.guest_properties(identity))
             with self._lock:
                 if session.cancelled.is_set():
                     raise _Cancelled()

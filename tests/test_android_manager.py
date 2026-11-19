@@ -90,6 +90,7 @@ class FakeAdb:
         self.boots_after = boots_after
         self.checks = 0
         self.shutdowns = []
+        self.identities = []
         self.keys = 0
         self.launcher = launcher
 
@@ -106,6 +107,9 @@ class FakeAdb:
         if self.launcher is not None:
             for p in self.launcher.by_name("emulator"):
                 p.exit(0)
+
+    def apply_identity(self, serial, properties):
+        self.identities.append((serial, properties))
 
 
 class FakeGateway:
@@ -203,6 +207,12 @@ def test_start_boots_emulator_through_account_proxy(tmp_path):
     assert m.test_gateways[0].proxy == PROXY
     assert m.test_fitters[0].display == DISPLAY
     assert m.test_adb.keys == 1
+    assert [serial for serial, _ in m.test_adb.identities] == [SERIAL]
+    props = dict(m.test_adb.identities[0][1])
+    identity = sdk.device_identity("a@x.com")
+    assert props["ro.product.model"] == identity.model
+    assert props["ro.serialno"] == identity.serial
+    assert props["ro.boot.verifiedbootstate"] == "green"
     m.stop()
 
 
