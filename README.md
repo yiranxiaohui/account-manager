@@ -138,16 +138,6 @@ Selkies 推到网页（`/android.html`），可以在里面自行安装和使用
   与模拟器内核，`-prop` 与 adb 都改不掉，`getprop | grep -i qemu` 仍能看到痕迹。Play Integrity
   这类服务端判定的完整性检测还会核对 Google 服务端设备档案和硬件 attestation，无法仅靠客户端
   属性绕过；Play 商店的“设备未通过认证”提示也可能出现在任意非官方机型上。
-
-**镜像层改写（实验性，默认关闭）**：`server/android_image.py` 能把官方 `system.img` 的
-`super` 分区数据前移并等长替换其中的 prop 文本，但官方 Play 镜像里的
-`system`/`vendor`/`product` 都带 dm-verity 哈希树，super 自身也有 AVB 签名尾；改任何字节都会
-让客户机校验失败、系统起不来，而正常启动的模拟器无法关闭校验。默认安装后不改镜像；只有设置
-环境变量 `ANDROID_IMAGE_MASK=1` 才会在系统镜像装好后执行一次，原文件备份到
-`data/android/image-mask/system.img.orig`（含 `masked-images.sha256` 与处理记录 `system.json`）。
-回滚：停止模拟器，用 `.orig` 覆盖 `data/android/sdk/system-images/.../x86_64/system.img`，
-再删掉 `data/android/image-mask/system.json` 并把 `ANDROID_IMAGE_MASK` 去掉即可。没有解锁
-bootloader / 自签 vbmeta 的完整链路之前，这个开关更适合做镜像分析，不建议在生产账号上打开。
 - **同一时刻只运行一台**。冷启动约 30～90 秒，画面页会显示启动进度；不存快照（快照约等于
   内存大小，每个账号一份太占盘）。点「停止」时先让系统把缓存写回数据盘再关机。
 - **只走账号代理**：未绑定代理的账号不能启动。模拟器的全部 TCP 经本地 HTTP 代理转给账号代理
@@ -162,6 +152,17 @@ bootloader / 自签 vbmeta 的完整链路之前，这个开关更适合做镜�
   `android.idle_timeout_min`，`0` 表示不自动停止）。
 - 与浏览器接管互不影响：模拟器用虚拟屏 `:101` 和另一个 Selkies（端口 14501，网页路径
   `/android-vnc/`，同样经 Nginx 复用面板登录鉴权）。
+
+### 镜像层改写（实验性，默认关闭）
+
+`server/android_image.py` 能把官方 `system.img` 的 `super` 分区数据前移并等长替换其中的 prop 文本，但官方 Play 镜像里的
+`system`/`vendor`/`product` 都带 dm-verity 哈希树，super 自身也有 AVB 签名尾；改任何字节都会
+让客户机校验失败、系统起不来；镜像里也没有可在客户机侧关闭校验的开关。默认安装后不改镜像；只有设置
+环境变量 `ANDROID_IMAGE_MASK=1` 才会在系统镜像装好后执行一次，原文件备份到
+`data/android/image-mask/system.img.orig`（含 `masked-images.sha256` 与处理记录 `system.json`）。
+回滚：停止模拟器，用 `.orig` 覆盖 `data/android/sdk/system-images/.../x86_64/system.img`，
+再删掉 `data/android/image-mask/system.json` 并把 `ANDROID_IMAGE_MASK` 去掉即可。没有解锁
+bootloader / 自签 vbmeta 的完整链路之前，这个开关更适合做镜像分析，不建议在生产账号上打开。
 
 **运行环境按需下载**：模拟器和系统镜像不在镜像里。第一次启动时面板会提示从 Google 官方仓库
 下载（完整下载约 2.6 GiB，解压后约 9 GiB，放在 `data/android/sdk/`），版本、大小和 SHA-256 固定在
