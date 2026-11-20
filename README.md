@@ -129,14 +129,25 @@ Selkies 推到网页（`/android.html`），可以在里面自行安装和使用
   首次启动新版会创建独立设备，原 Android 14 数据盘保留在原位。账号改邮箱或删除时会一并处理两代数据。
 - **设备标识伪装**：每个账号按邮箱稳定生成一套标识——序列号、IMEI（带 Luhn 校验位）、
   MEID、Android ID、蓝牙和 Wi-Fi MAC，保存在 `data/android/avd/<账号>/identity.json`，
-  同一账号每次启动都不变；开机后经 adb 尽力补写 `ro.serialno`、`gsm.sim.imei` 等。
-  AVD 固定使用 Google 官方可认证的 Pixel 8 Pro 档案（代号 `husky`，摄像头、音频等
-  硬件项按真机开启），并在首次启动时向 Google 官方 check-in 接口取一份设备档案存入
+  同一账号每次启动都不变。型号、品牌、序列号在启动时用模拟器的 `-prop` 注入（Android 16+
+  的 `ro.*` 归 init 所有，开机后的 `setprop` 会被拒）；SIM 卡状态类属性才由 adb 补写。
+  AVD 固定使用 Google 官方可认证的 Pixel 8 Pro 档案（代号 `husky`，摄像头、音频、传感器、
+  GPS、通话能力按真机开启），并在首次启动时向 Google 官方 check-in 接口取一份设备档案存入
   `device_profile.json`（7 天内复用）。
-  注意：Android 16+ 的 `ro.product.*`、`ro.build.*` 由系统镜像的 `build.prop` 与 boot
-  阶段的 init 写死，adb shell 改不了，模拟器内核仍会暴露出 `ranchu`、`qemu` 等痕迹；
-  Play Integrity 这类服务端判定的完整性检测无法仅靠客户端属性绕过，Play 商店的
-  “设备未通过认证”提示也可能出现在任意非官方机型上。
+  注意：`ro.hardware`、`ro.kernel.qemu`、`ro.build.fingerprint` 来自系统镜像的 `build.prop`
+  与模拟器内核，`-prop` 与 adb 都改不掉，`getprop | grep -i qemu` 仍能看到痕迹。Play Integrity
+  这类服务端判定的完整性检测还会核对 Google 服务端设备档案和硬件 attestation，无法仅靠客户端
+  属性绕过；Play 商店的“设备未通过认证”提示也可能出现在任意非官方机型上。
+
+**镜像层改写（实验性，默认关闭）**：`server/android_image.py` 能把官方 `system.img` 的
+`super` 分区数据前移并等长替换其中的 prop 文本，但官方 Play 镜像里的
+`system`/`vendor`/`product` 都带 dm-verity 哈希树，super 自身也有 AVB 签名尾；改任何字节都会
+让客户机校验失败、系统起不来，而正常启动的模拟器无法关闭校验。默认安装后不改镜像；只有设置
+环境变量 `ANDROID_IMAGE_MASK=1` 才会在系统镜像装好后执行一次，原文件备份到
+`data/android/image-mask/system.img.orig`（含 `masked-images.sha256` 与处理记录 `system.json`）。
+回滚：停止模拟器，用 `.orig` 覆盖 `data/android/sdk/system-images/.../x86_64/system.img`，
+再删掉 `data/android/image-mask/system.json` 并把 `ANDROID_IMAGE_MASK` 去掉即可。没有解锁
+bootloader / 自签 vbmeta 的完整链路之前，这个开关更适合做镜像分析，不建议在生产账号上打开。
 - **同一时刻只运行一台**。冷启动约 30～90 秒，画面页会显示启动进度；不存快照（快照约等于
   内存大小，每个账号一份太占盘）。点「停止」时先让系统把缓存写回数据盘再关机。
 - **只走账号代理**：未绑定代理的账号不能启动。模拟器的全部 TCP 经本地 HTTP 代理转给账号代理

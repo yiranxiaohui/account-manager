@@ -211,8 +211,12 @@ def test_start_boots_emulator_through_account_proxy(tmp_path):
     assert [serial for serial, _ in m.test_adb.identities] == [SERIAL]
     props = dict(m.test_adb.identities[0][1])
     identity = sdk.device_identity("a@x.com")
-    assert props["ro.serialno"] == identity.serial
+    # ro.* 只能靠 -prop 注入；adb 补写的只剩 SIM 状态类属性。
     assert props["gsm.sim.imei"] == identity.imei
+    assert "ro.serialno" not in props
+    injected = [argv[i + 1] for i, a in enumerate(argv) if a == "-prop"]
+    assert f"ro.serialno={identity.serial}" in injected
+    assert f"ro.product.model={identity.model}" in injected
     m.stop()
 
 

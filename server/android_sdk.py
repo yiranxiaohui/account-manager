@@ -76,6 +76,8 @@ PACKAGES = (
 )
 
 TOTAL_DOWNLOAD = sum(p.size for p in PACKAGES)
+# 系统镜像包（解压后是 system.img/vendor.img 等分区镜像），安装后可能要做镜像层处理。
+SYSTEM_IMAGE_PACKAGE = "system-image-37.2-google_apis_playstore_ps16k-x86_64-r7"
 # 新系统镜像解压后占 8,774,608,505 字节，约为压缩包的 3.6 倍。
 INSTALL_SPACE_FACTOR = 4.6  # 压缩包与解压目录在安装时并存
 MARKER = ".account-manager-package.json"
@@ -105,6 +107,68 @@ class AndroidPaths:
     @property
     def adb_key(self) -> Path:
         return self.home / "adbkey"
+
+
+def image_mask_enabled() -> bool:
+    """是否在安装后改写官方系统镜像；必须显式 ``ANDROID_IMAGE_MASK=1`` 才启用。
+
+    官方 Play 镜像是 dm-verity + AVB 签名的可引导 super，改任何分区字节都会让
+    客户机校验失败、系统起不来；不能用改图片段的方式“伪装真机”。默认保持原厂
+    镜像，设备标识由 AVD 配置与启动参数提供。
+    """
+    return os.environ.get("ANDROID_IMAGE_MASK", "0").strip().lower() in ("1", "true", "yes")
+
+
+def image_mask_paths(paths: AndroidPaths) -> Path:
+    return paths.root / "image-mask"
+
+
+def _read_mask_marker(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _post_install_mask(paths: AndroidPaths) -> None:
+    """系统镜像装好后按开关决定是否做镜像层处理。
+
+    处理失败只记录日志，不推翻已完成的安装：原厂镜像本身就能启动，`system.img`
+    会先备份到 ``data/android/image-mask/``，回滚即“用 .orig 覆盖回去”。
+    """
+    if not image_mask_enabled():
+        return
+    pkg = next((p for p in PACKAGES if p.key == SYSTEM_IMAGE_PACKAGE), None)
+    if pkg is None:
+        return
+    image = paths.sdk / pkg.dest / "system.img"
+    if not image.exists():
+        console.log(f"镜像层处理跳过：{image} 不存在")
+        return
+    marker_dir = image_mask_paths(paths)
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    marker = marker_dir / "system.json"
+    recorded = _read_mask_marker(marker)
+    if recorded.get("source_sha256") == pkg.sha256:
+        return
+    try:
+        from server import android_image
+
+        result = android_image.SystemImageMasker(image, backup_dir=marker_dir).run()
+    except Exception as exc:  # noqa: BLE001
+        console.log(f"镜像层处理失败，保留原厂镜像：{exc}")
+        return
+    marker.write_text(json.dumps({
+        "source_sha256": pkg.sha256,
+        "image": str(image),
+        "backup": str(result.backup) if result.backup else "",
+        "substituted": result.report.substituted,
+        "stripped": result.stripped,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    total = sum(result.report.substituted.values())
+    console.log(f"系统镜像已处理：{total} 处 prop 命中，原文件备份在 "
+                f"{result.backup or marker_dir}")
 
 
 def package_installed(paths: AndroidPaths, pkg: Package) -> bool:
@@ -282,6 +346,7 @@ class SdkInstaller:
             )
         for pkg in pending:
             self._install_one(pkg)
+        _post_install_mask(paths)
 
     def _install_one(self, pkg: Package) -> None:
         paths = self.paths
@@ -564,6 +629,18 @@ def avd_config(name: str, identity: DeviceIdentity | None = None,
         "hw.audioOutput": "yes",
         "hw.camera.back": "emulated",
         "hw.camera.front": "emulated",
+        # 真机的传感器、GPS 与通话能力；关掉这些等于告诉应用“这里是模拟器”。
+        "hw.sensors.accelerometer": "yes",
+        "hw.sensors.gyroscope": "yes",
+        "hw.sensors.magnetometer": "yes",
+        "hw.sensors.proximity": "yes",
+        "hw.sensors.light": "yes",
+        "hw.sensors.pressure": "yes",
+        "hw.sensors.humidity": "yes",
+        "hw.sensors.temperature": "yes",
+        "hw.gps": "yes",
+        "hw.gsmSim": "yes",
+        "hw.arc": "no",
         "showDeviceFrame": "no",
         "disk.dataPartition.size": "8G",
         "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
@@ -596,12 +673,11 @@ def existing_screen(device: Path) -> tuple[int, int, int] | None:
 def guest_properties(identity: DeviceIdentity) -> list[tuple[str, str]]:
     """开机后经 adb 补写的属性 (属性名, 值)。
 
-    Android 16+ 把 ro.* 收归 init 所有，shell 用户的 setprop 会被拒；这里只保留
-    能改的标识与状态类属性，最终以设备上的真实效果为准。
+    Android 16+ 只允许 shell 用户改自己命名空间里的属性；``ro.*`` 全部归 init
+    所有，``setprop ro.xxx`` 一律被拒（即使值是同一个）。所以这里只列真正可写
+    的 SIM 状态类属性，``ro.*`` 由 AVD 配置与 ``-prop`` 参数在开机时注入。
     """
     return [
-        ("ro.serialno", identity.serial),
-        ("ro.boot.serialno", identity.serial),
         ("gsm.sim.serial", identity.serial),
         ("gsm.sim.imei", identity.imei),
         ("gsm.sim.meid", identity.meid),
@@ -610,10 +686,23 @@ def guest_properties(identity: DeviceIdentity) -> list[tuple[str, str]]:
         ("gsm.sim.operator.iso-country", ""),
         ("gsm.operator.alpha", ""),
         ("gsm.operator.numeric", ""),
-        ("ro.setupwizard.mode", "DISABLED"),
-        ("ro.debuggable", "0"),
-        ("ro.secure", "1"),
-        ("service.adb.root", "0"),
+    ]
+
+
+def emulator_props(identity: DeviceIdentity) -> list[tuple[str, str]]:
+    """以 ``-prop`` 交给模拟器的属性（只在启动时注入，开机后不能再改）。
+
+    这些都是真实 Pixel 的设备标识。``ro.kernel.qemu``、``ro.hardware`` 一类由
+    模拟器内核与镜像决定，``-prop`` 覆盖不了，也不该在这里假装能改。
+    """
+    return [
+        ("ro.serialno", identity.serial),
+        ("ro.boot.serialno", identity.serial),
+        ("ro.product.model", identity.model),
+        ("ro.product.brand", identity.brand),
+        ("ro.product.manufacturer", identity.manufacturer),
+        ("ro.product.device", identity.device),
+        ("ro.product.board", identity.device),
     ]
 
 

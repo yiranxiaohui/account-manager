@@ -6,6 +6,7 @@ import io
 import json
 import os
 import stat
+import struct
 import zipfile
 
 import pytest
@@ -56,13 +57,14 @@ def test_extract_rejects_link_escaping_destination(tmp_path):
         sdk.extract_zip(archive, "x86_64/", tmp_path / "out")
 
 
-def _fake_packages(tmp_path, monkeypatch):
+def _fake_packages(tmp_path, monkeypatch, image: bytes = b"img" * 10):
     payloads = {}
     pkgs = []
     for key, prefix, dest, files in (
         ("emu", "emulator/", "emulator", [("emulator/emulator", b"emu", 0o755)]),
         ("adb", "platform-tools/", "platform-tools", [("platform-tools/adb", b"adb", 0o755)]),
-        ("img", "x86_64/", sdk.SYSTEM_IMAGE_DIR, [("x86_64/system.img", b"img" * 10, 0o644)]),
+        (sdk.SYSTEM_IMAGE_PACKAGE, "x86_64/", sdk.SYSTEM_IMAGE_DIR,
+         [("x86_64/system.img", image, 0o644)]),
     ):
         data = _zip_bytes([(n, d, stat.S_IFREG | m) for n, d, m in files])
         url = f"https://dl.test/{key}.zip"
@@ -72,6 +74,7 @@ def _fake_packages(tmp_path, monkeypatch):
                                 strip_prefix=prefix, dest=dest))
     monkeypatch.setattr(sdk, "PACKAGES", tuple(pkgs))
     monkeypatch.setattr(sdk, "TOTAL_DOWNLOAD", sum(p.size for p in pkgs))
+    monkeypatch.delenv("ANDROID_IMAGE_MASK", raising=False)
     downloads = []
 
     def download(url, dest, on_progress):
@@ -98,6 +101,70 @@ def test_installer_installs_all_packages_once(tmp_path, monkeypatch):
     assert inst.status()["state"] == "ready"
     inst.install()
     assert len(downloads) == 3  # 已装好的不再下载
+
+
+def _play_disk_bytes() -> bytes:
+    """和 Play 镜像同布局的最小盘：vbmeta、super、数据区里的 prop 文本。"""
+    from server import android_image as ai
+
+    entries_lba, entry_size, count = 2, 128, 32
+    total = 0x801000
+    head = bytearray(total)
+    header = bytearray(92)
+    header[0:8] = ai.GPT_SIGNATURE
+    struct.pack_into("<Q", header, 72, entries_lba)
+    struct.pack_into("<I", header, 80, count)
+    struct.pack_into("<I", header, 84, entry_size)
+    head[512:512 + 92] = header
+    for i, (name, start, end) in enumerate((("vbmeta", 2048, 4095),
+                                           ("super", 6144, 12287))):
+        row = bytearray(entry_size)
+        row[0:16] = bytes([i + 1]) * 16
+        struct.pack_into("<QQ", row, 32, start, end)
+        row[56:128] = name.encode("utf-16-le").ljust(72, b"\0")
+        off = entries_lba * 512 + i * entry_size
+        head[off:off + entry_size] = row
+    body = b"\0ro.hardware=ranchu\nro.kernel.qemu=1\0dev-keys\0"
+    at = 6144 * 512 + ai.LP_DATA_OFFSET
+    head[at:at + len(body)] = body
+    return bytes(head)
+
+
+def test_system_image_is_left_untouched_by_default(tmp_path, monkeypatch):
+    image = _play_disk_bytes()
+    _, _, download = _fake_packages(tmp_path, monkeypatch, image=image)
+    paths = sdk.AndroidPaths(tmp_path / "android")
+    sdk.SdkInstaller(paths, download_fn=download, disk_free_fn=lambda p: 10 ** 12).install()
+    installed = paths.sdk / sdk.SYSTEM_IMAGE_DIR / "system.img"
+    assert installed.read_bytes() == image
+    assert not sdk.image_mask_paths(paths).exists()
+    assert sdk.image_mask_enabled() is False
+
+
+def test_image_mask_requires_explicit_opt_in(tmp_path, monkeypatch):
+    image = _play_disk_bytes()
+    _, _, download = _fake_packages(tmp_path, monkeypatch, image=image)
+    monkeypatch.setenv("ANDROID_IMAGE_MASK", "1")
+    assert sdk.image_mask_enabled() is True
+    paths = sdk.AndroidPaths(tmp_path / "android")
+    sdk.SdkInstaller(paths, download_fn=download, disk_free_fn=lambda p: 10 ** 12).install()
+    installed = paths.sdk / sdk.SYSTEM_IMAGE_DIR / "system.img"
+    assert installed.read_bytes() != image
+    marker = json.loads((sdk.image_mask_paths(paths) / "system.json").read_text())
+    assert marker["substituted"]["ro.hardware"] == 1
+    backup = (sdk.image_mask_paths(paths) / "system.img.orig")
+    assert backup.read_bytes() == image
+
+
+def test_image_mask_skips_broken_and_foreign_images(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANDROID_IMAGE_MASK", "1")
+    _, _, download = _fake_packages(tmp_path, monkeypatch)  # system.img 不是 GPT 盘
+    paths = sdk.AndroidPaths(tmp_path / "android")
+    sdk.SdkInstaller(paths, download_fn=download, disk_free_fn=lambda p: 10 ** 12).install()
+    installed = paths.sdk / sdk.SYSTEM_IMAGE_DIR / "system.img"
+    assert installed.read_bytes() == b"img" * 10
+    assert sdk.sdk_ready(paths)
+    assert not (sdk.image_mask_paths(paths) / "system.json").exists()
 
 
 def test_installer_rejects_checksum_mismatch(tmp_path, monkeypatch):
@@ -195,6 +262,22 @@ def test_avd_uses_official_profile_and_device_hardware():
     # 真机有摄像头和音频；"none" 是模拟器特征。
     assert lines["hw.camera.back"] != "none"
     assert lines["hw.audioOutput"] == "yes"
+    # 传感器、GPS、通话能力与 ARC：真机都有，缺了就是模拟器特征。
+    for key in ("hw.sensors.accelerometer", "hw.sensors.gyroscope",
+                "hw.sensors.magnetometer", "hw.gps", "hw.gsmSim"):
+        assert lines[key] == "yes"
+    assert lines["hw.arc"] == "no"
+
+
+def test_guest_properties_only_lists_writable_keys():
+    identity = sdk.device_identity("a@x.com")
+    names = [k for k, _ in sdk.guest_properties(identity)]
+    # Android 16+ 禁止 shell 改 ro.*，塞进去的 setprop 只会报错。
+    assert not any(k.startswith("ro.") for k in names)
+    assert "gsm.sim.imei" in names
+    injected = dict(sdk.emulator_props(identity))
+    assert injected["ro.serialno"] == identity.serial
+    assert injected["ro.product.model"] == "Pixel 8 Pro"
 
 
 def test_existing_screen_is_preserved_across_refresh(tmp_path, monkeypatch):

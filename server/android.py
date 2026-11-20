@@ -106,7 +106,8 @@ def kvm_available(path: str = KVM_DEVICE) -> bool:
 
 
 def emulator_argv(paths: android_sdk.AndroidPaths, avd: str, *, http_proxy: str,
-                  dns_host: str, timezone: str | None) -> list[str]:
+                  dns_host: str, timezone: str | None,
+                  props: list[tuple[str, str]] | None = None) -> list[str]:
     argv = [
         str(paths.emulator), "-avd", avd,
         "-no-audio", "-no-boot-anim",
@@ -120,6 +121,9 @@ def emulator_argv(paths: android_sdk.AndroidPaths, avd: str, *, http_proxy: str,
     ]
     if timezone:
         argv += ["-timezone", timezone]
+    # ro.* 归 init 所有，开机后 setprop 改不了；-prop 在启动参数里注入才生效。
+    for name, value in props or ():
+        argv += ["-prop", f"{name}={value}"]
     return argv
 
 
@@ -410,9 +414,11 @@ class AndroidManager:
             self._check(session)
 
             gateway = session.gateway
+            identity = android_sdk.device_identity(session.email)
             argv = emulator_argv(
                 self.paths, avd, http_proxy=gateway.http_proxy_url,
                 dns_host=gateway.dns_host, timezone=tz,
+                props=android_sdk.emulator_props(identity),
             )
             # 模拟器日志很吵（开机期间反复重试 adb 等），写进单独的文件，不混进容器日志。
             self.paths.root.mkdir(parents=True, exist_ok=True)
@@ -427,7 +433,6 @@ class AndroidManager:
                     raise _Cancelled()
                 session.phase = "booting"
             self._wait_boot(session)
-            identity = android_sdk.device_identity(session.email)
             self.adb.apply_identity(SERIAL, android_sdk.guest_properties(identity))
             with self._lock:
                 if session.cancelled.is_set():
