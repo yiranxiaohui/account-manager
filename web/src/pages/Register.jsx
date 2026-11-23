@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ProxySelect } from "@/components/proxy-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -155,17 +155,14 @@ export default function Register({ runStream }) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="registration-proxy">注册代理</Label>
-              <NativeSelect
+              <ProxySelect
                 id="registration-proxy"
-                className="w-full"
                 value={proxyId}
-                onChange={(e) => setProxyId(e.target.value)}
-              >
-                <NativeSelectOption value="">使用默认配置（3x-ui / 固定代理 / 直连）</NativeSelectOption>
-                {proxies.map((p) => (
-                  <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>
-                ))}
-              </NativeSelect>
+                proxies={proxies}
+                noneLabel="使用默认配置"
+                noneHint="3x-ui / 固定代理 / 直连"
+                onChange={setProxyId}
+              />
               <p className="text-xs text-muted-foreground">
                 在<a className="text-primary underline-offset-4 hover:underline" href="#/proxies">代理池</a>
                 保存代理后，可在此选择用于本次注册。

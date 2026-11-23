@@ -12,6 +12,7 @@ import {
   Globe,
   HeartPulse,
   KeyRound,
+  ListFilter,
   LogIn,
   MonitorPlay,
   MoreHorizontal,
@@ -68,7 +69,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { OptionSelect } from "@/components/option-select";
 import {
   InputGroup,
   InputGroupAddon,
@@ -102,22 +103,26 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const FILTERS = [
-  ["all", "全部"],
-  ["alive", "有效"],
-  ["dead", "失效"],
-  ["blocked", "被拦截"],
-  ["unchecked", "未检测"],
-  ["claimed", "已获取"],
-  ["unclaimed", "未获取"],
-  ["no_sk", "无 sessionKey"],
-  ["oauth", "已授权 OAuth"],
-  ["no_oauth", "未授权 OAuth"],
-  ["plan_max", "套餐：Max"],
-  ["plan_pro", "套餐：Pro"],
-  ["plan_team", "套餐：Team / Enterprise"],
-  ["plan_free", "套餐：Free"],
-  ["plan_none", "套餐：未识别"],
+// 账号列表的筛选项：按检测状态 / 获取与授权 / 套餐分段
+const FILTER_OPTIONS = [
+  { value: "all", label: "全部" },
+  { separator: true },
+  { value: "alive", label: "有效" },
+  { value: "dead", label: "失效" },
+  { value: "blocked", label: "被拦截" },
+  { value: "unchecked", label: "未检测" },
+  { separator: true },
+  { value: "claimed", label: "已获取" },
+  { value: "unclaimed", label: "未获取" },
+  { value: "no_sk", label: "无 sessionKey" },
+  { value: "oauth", label: "已授权 OAuth" },
+  { value: "no_oauth", label: "未授权 OAuth" },
+  { separator: true },
+  { value: "plan_max", label: "套餐：Max" },
+  { value: "plan_pro", label: "套餐：Pro" },
+  { value: "plan_team", label: "套餐：Team / Enterprise" },
+  { value: "plan_free", label: "套餐：Free" },
+  { value: "plan_none", label: "套餐：未识别" },
 ];
 
 function matchFilter(a, filter) {
@@ -866,11 +871,15 @@ export default function Accounts({ attach, running, navigate }) {
               </InputGroupAddon>
             )}
           </InputGroup>
-          <NativeSelect aria-label="筛选" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            {FILTERS.map(([v, label]) => (
-              <NativeSelectOption key={v} value={v}>{label}</NativeSelectOption>
-            ))}
-          </NativeSelect>
+          <OptionSelect
+            aria-label="筛选"
+            className="w-full sm:w-48"
+            prefix={<ListFilter />}
+            align="end"
+            value={filter}
+            options={FILTER_OPTIONS}
+            onValueChange={setFilter}
+          />
         </div>
 
         <div className="flex h-10 items-center gap-3 border-b bg-muted/30 px-4 text-xs text-muted-foreground">
@@ -1228,6 +1237,7 @@ export default function Accounts({ attach, running, navigate }) {
           </AlertDialogHeader>
           <ProxySelect
             id="batch-proxy"
+            aria-label="代理"
             value={batchProxy?.proxyId ?? ""}
             proxies={proxies}
             disabled={batchProxy?.busy}

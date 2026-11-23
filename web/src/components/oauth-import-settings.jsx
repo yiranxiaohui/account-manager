@@ -3,7 +3,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Unplug } from "lucide-react";
+import { OptionSelect } from "@/components/option-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 // 与 Sub2API 创建 Anthropic 账号时的「添加方式」一致。
@@ -11,6 +12,23 @@ export const IMPORT_ACCOUNT_TYPES = [
   ["oauth", "OAuth", "完整授权，可主动查询用量"],
   ["setup-token", "Setup Token（长期有效）", "仅推理权限，用量来自响应头采样"],
 ];
+
+const MODEL_MODES = [
+  { value: "keep", label: "沿用文件中的模型设置" },
+  { value: "all", label: "允许所有模型" },
+  { value: "whitelist", label: "模型白名单" },
+  { value: "mapping", label: "模型映射" },
+];
+
+// Sub2API 代理（id 为数字）→ 下拉选项；空串表示直连
+function sub2apiProxyOptions(proxies = []) {
+  const direct = { value: "", label: "直连", hint: "不使用代理", icon: <Unplug /> };
+  if (!proxies.length) return [direct];
+  return [direct, { separator: true }, {
+    group: `Sub2API 代理（${proxies.length}）`,
+    options: proxies.map((proxy) => ({ value: String(proxy.id), label: proxy.name })),
+  }];
+}
 
 export function importAccountTypeLabel(type) {
   return IMPORT_ACCOUNT_TYPES.find(([value]) => value === type)?.[1] ?? type;
@@ -146,13 +164,8 @@ export function OAuthImportSettings({ value, onChange, options, loading, error, 
       {error && <p role="alert" className="text-destructive">{error}</p>}
       <div className="space-y-1.5">
         <Label htmlFor="oauth-proxy">代理</Label>
-        <NativeSelect id="oauth-proxy" className="w-full"
-          value={value.proxyId} disabled={loading || !options} onChange={(e) => set("proxyId", e.target.value)}>
-          <NativeSelectOption value="">直连（不使用代理）</NativeSelectOption>
-          {options?.proxies.map((proxy) => (
-            <NativeSelectOption key={proxy.id} value={proxy.id}>{proxy.name}</NativeSelectOption>
-          ))}
-        </NativeSelect>
+        <OptionSelect id="oauth-proxy" value={value.proxyId} disabled={loading || !options}
+          options={sub2apiProxyOptions(options?.proxies)} onValueChange={(v) => set("proxyId", v)} />
       </div>
       <div className="space-y-1.5">
         <span className="font-medium">分组（可多选）</span>
@@ -183,13 +196,8 @@ export function OAuthImportSettings({ value, onChange, options, loading, error, 
         </label>
         <div className="space-y-1.5">
           <Label htmlFor="oauth-model-mode">模型限制</Label>
-          <NativeSelect id="oauth-model-mode" className="w-full"
-            value={value.modelMode} onChange={(e) => set("modelMode", e.target.value)}>
-            <NativeSelectOption value="keep">沿用文件中的模型设置</NativeSelectOption>
-            <NativeSelectOption value="all">允许所有模型</NativeSelectOption>
-            <NativeSelectOption value="whitelist">模型白名单</NativeSelectOption>
-            <NativeSelectOption value="mapping">模型映射</NativeSelectOption>
-          </NativeSelect>
+          <OptionSelect id="oauth-model-mode" value={value.modelMode} options={MODEL_MODES}
+            onValueChange={(v) => set("modelMode", v)} />
         </div>
         {["whitelist", "mapping"].includes(value.modelMode) && (
           <div className="space-y-1.5">

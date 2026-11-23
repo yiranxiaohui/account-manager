@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ProxySelect } from "@/components/proxy-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -105,16 +105,14 @@ export function ManualLoginDialog({ open, onOpenChange, onStarted }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="manual-proxy">代理</Label>
-            <NativeSelect
+            <ProxySelect
               id="manual-proxy"
-              className="w-full"
               value={proxyId}
+              proxies={proxies}
               disabled={busy}
-              onChange={(e) => setProxyId(e.target.value)}
-            >
-              <NativeSelectOption value="">不使用代理（直连，账号不绑定代理）</NativeSelectOption>
-              {proxies.map((p) => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
-            </NativeSelect>
+              noneHint="直连，账号不绑定代理"
+              onChange={setProxyId}
+            />
             <p className="text-xs text-muted-foreground">
               浏览器经所选代理登录，取出的 sk 也会绑定该代理（之后检测 / 接管都走它）。
             </p>

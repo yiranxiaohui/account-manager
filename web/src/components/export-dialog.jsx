@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { OptionSelect } from "@/components/option-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -22,19 +22,19 @@ import {
 const STORAGE_KEY = "cr:export-options";
 
 const FORMATS = [
-  ["text", "文本块（每行「字段：值」）"],
-  ["line", "单行（值用分隔符连接）"],
-  ["csv", "CSV（Excel 可打开）"],
-  ["json", "JSON"],
-  ["sub2api", "sub2api 导入文件（仅已授权 OAuth 的账号）"],
+  { value: "text", label: "文本块", hint: "每行「字段：值」" },
+  { value: "line", label: "单行", hint: "值用分隔符连接" },
+  { value: "csv", label: "CSV", hint: "Excel 可打开" },
+  { value: "json", label: "JSON" },
+  { value: "sub2api", label: "sub2api 导入文件", hint: "仅已授权 OAuth 的账号" },
 ];
 
 const SCOPES = [
-  ["all", "全部账号", {}],
-  ["success", "仅注册成功（有 sessionKey）", { status: "success" }],
-  ["alive", "仅检测有效", { check_status: "alive" }],
-  ["unclaimed", "仅未获取", { claimed: "false" }],
-  ["claimed", "仅已获取", { claimed: "true" }],
+  { value: "all", label: "全部账号", params: {} },
+  { value: "success", label: "仅注册成功", hint: "有 sessionKey", params: { status: "success" } },
+  { value: "alive", label: "仅检测有效", params: { check_status: "alive" } },
+  { value: "unclaimed", label: "仅未获取", params: { claimed: "false" } },
+  { value: "claimed", label: "仅已获取", params: { claimed: "true" } },
 ];
 
 const EXT = { text: "txt", line: "txt", csv: "csv", json: "json", sub2api: "json" };
@@ -80,7 +80,7 @@ export function ExportDialog({ open, onOpenChange }) {
         setFields(savedFields.length ? savedFields : d.default_fields);
         if (saved?.format && EXT[saved.format]) setFormat(saved.format);
         if (saved?.sep) setSep(saved.sep);
-        if (saved?.scope && SCOPES.some(([k]) => k === saved.scope)) setScope(saved.scope);
+        if (saved?.scope && SCOPES.some((o) => o.value === saved.scope)) setScope(saved.scope);
       })
       .catch((e) => {
         if (e?.status !== 401) toast.error("加载导出字段失败");
@@ -102,7 +102,7 @@ export function ExportDialog({ open, onOpenChange }) {
     if (format === "line" && !sep) return toast.error("请填写分隔符");
     setBusy(true);
     try {
-      const params = { format, ...SCOPES.find(([k]) => k === scope)[2] };
+      const params = { format, ...SCOPES.find((o) => o.value === scope).params };
       if (!sub2api) params.fields = fields.join(",");
       if (format === "line") params.sep = sep;
       const text = await api.exportAccountsText(params);
@@ -185,25 +185,11 @@ export function ExportDialog({ open, onOpenChange }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="export-format">格式</Label>
-                <NativeSelect
-                  id="export-format"
-                  className="w-full"
-                  value={format}
-                  onChange={(e) => setFormat(e.target.value)}
-                >
-                  {FORMATS.map(([k, label]) => <NativeSelectOption key={k} value={k}>{label}</NativeSelectOption>)}
-                </NativeSelect>
+                <OptionSelect id="export-format" value={format} options={FORMATS} onValueChange={setFormat} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="export-scope">范围</Label>
-                <NativeSelect
-                  id="export-scope"
-                  className="w-full"
-                  value={scope}
-                  onChange={(e) => setScope(e.target.value)}
-                >
-                  {SCOPES.map(([k, label]) => <NativeSelectOption key={k} value={k}>{label}</NativeSelectOption>)}
-                </NativeSelect>
+                <OptionSelect id="export-scope" value={scope} options={SCOPES} onValueChange={setScope} />
               </div>
             </div>
             {format === "line" && (

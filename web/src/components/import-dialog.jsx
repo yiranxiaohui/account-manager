@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ProxySelect } from "@/components/proxy-select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -116,16 +116,14 @@ export function ImportDialog({ open, onOpenChange, onImported }) {
           />
           <div className="space-y-1.5">
             <Label htmlFor="import-proxy">代理</Label>
-            <NativeSelect
+            <ProxySelect
               id="import-proxy"
-              className="w-full"
               value={proxyId}
+              proxies={proxies}
               disabled={busy}
-              onChange={(e) => setProxyId(e.target.value)}
-            >
-              <NativeSelectOption value="">不使用代理（直连检测，账号不绑定代理）</NativeSelectOption>
-              {proxies.map((p) => <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>)}
-            </NativeSelect>
+              noneHint="直连检测，账号不绑定代理"
+              onChange={setProxyId}
+            />
             <p className="text-xs text-muted-foreground">
               所选代理会用于检测，并写入账号的代理字段（之后检测 / 接管都走它）。在
               <a className="text-primary underline-offset-4 hover:underline" href="#/proxies">代理池</a>中管理代理。
