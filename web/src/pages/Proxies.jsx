@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   InputGroup,
   InputGroupAddon,
@@ -101,6 +102,39 @@ function SourceBadge({ entry, currentBase }) {
 
 const ROW_GRID = "grid grid-cols-[1rem_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_6rem] items-center gap-4";
 
+const USAGE_PREVIEW = 15;
+const LIVE_LABEL = { alive: "有效", dead: "失效", blocked: "被拦截", error: "检测失败" };
+
+// 绑定账号数徽章；悬浮（或键盘聚焦）时列出使用该代理的账号
+function UsageBadge({ count, accounts }) {
+  const list = accounts || [];
+  const rest = count - Math.min(list.length, USAGE_PREVIEW);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" tabIndex={0}
+          className="shrink-0 cursor-default font-normal text-muted-foreground outline-none"
+          aria-label={`${count} 个账号使用该代理`}>
+          <Users /> {count}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" className="max-w-sm flex-col items-stretch gap-0.5 py-2">
+        <span className="mb-0.5 font-medium">{count} 个账号使用该代理</span>
+        {list.slice(0, USAGE_PREVIEW).map((a) => (
+          <span key={a.email} className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-mono text-[11px]" title={a.display_name || undefined}>{a.email}</span>
+            {a.check_status && a.check_status !== "alive" ? (
+              <span className="shrink-0 opacity-60">{LIVE_LABEL[a.check_status] || a.check_status}</span>
+            ) : null}
+          </span>
+        ))}
+        {rest > 0 && <span className="opacity-60">还有 {rest} 个…</span>}
+        <span className="mt-1 opacity-60">仍被使用时不能删除</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function Proxies({ navigate }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +151,7 @@ export default function Proxies({ navigate }) {
   const [missing, setMissing] = useState(() => new Set());
   const [syncing, setSyncing] = useState(false);
   const [usage, setUsage] = useState({}); // {条目 id: 绑定的账号数}
+  const [usageAccounts, setUsageAccounts] = useState({}); // {条目 id: [{email, display_name, check_status}]}
 
   async function reload() {
     try {
@@ -124,6 +159,7 @@ export default function Proxies({ navigate }) {
       setItems(cfg.saved_proxies || []);
       setSub2apiBase(normalizeBase(cfg.sub2api_base_url));
       setUsage(used.usage || {});
+      setUsageAccounts(used.accounts || {});
     } catch (e) {
       if (e?.status !== 401) toast.error("代理池加载失败");
     } finally {
@@ -466,10 +502,7 @@ export default function Proxies({ navigate }) {
                         <span className="truncate font-medium" title={p.name}>{p.name}</span>
                         <SourceBadge entry={p} currentBase={sub2apiBase} />
                         {usage[p.id] ? (
-                          <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground"
-                            title="绑定该代理的账号数；仍被使用时不能删除">
-                            <Users /> {usage[p.id]}
-                          </Badge>
+                          <UsageBadge count={usage[p.id]} accounts={usageAccounts[p.id]} />
                         ) : null}
                         {missing.has(p.id) && <Pill tone="warning">上游已移除</Pill>}
                       </span>

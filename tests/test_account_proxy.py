@@ -86,9 +86,14 @@ def test_startup_migrates_manual_proxies_into_pool(tmp_path):
     assert len(_pool(tmp_path / "config.yaml")) == 3
 
     c = _login(app)
-    assert c.get("/api/proxies/usage").json() == {
-        "usage": {"us": 1, "jp": 1, created["id"]: 2},
-    }
+    res = c.get("/api/proxies/usage").json()
+    assert res["usage"] == {"us": 1, "jp": 1, created["id"]: 2}
+    # 悬浮提示用：每个条目绑定的账号列表（不含 sessionKey 等凭据）
+    assert [a["email"] for a in res["accounts"][created["id"]]] == ["new1@x.com", "new2@x.com"]
+    assert res["accounts"]["us"] == [
+        {"email": "exact@x.com", "display_name": "", "check_status": ""},
+    ]
+    assert set(res["accounts"]) == set(res["usage"])
 
 
 def test_migration_names_do_not_collide(tmp_path):

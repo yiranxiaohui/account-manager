@@ -137,8 +137,12 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
 
     @app.get("/api/proxies/usage")
     def proxies_usage(_=Depends(require_auth)):
-        """每个代理池条目绑定的账号数：{usage: {proxy_id: n}}。"""
-        return {"usage": db.proxy_usage(state.conn)}
+        """每个代理池条目绑定的账号数与账号列表：{usage: {proxy_id: n}, accounts: {proxy_id: [...]}}。"""
+        accounts = db.proxy_accounts(state.conn)
+        return {
+            "usage": {pid: len(items) for pid, items in accounts.items()},
+            "accounts": accounts,
+        }
 
     @app.post("/api/xui/test")
     async def xui_test(request: Request, _=Depends(require_auth)):

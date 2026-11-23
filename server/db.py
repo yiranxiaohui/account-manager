@@ -256,6 +256,22 @@ def proxy_usage(conn) -> dict[str, int]:
     return {str(r[0]): int(r[1]) for r in rows}
 
 
+def proxy_accounts(conn) -> dict[str, list[dict]]:
+    """每个代理池条目绑定的账号（按创建时间）：{proxy_id: [{email, display_name, check_status}]}。"""
+    rows = conn.execute(
+        "SELECT proxy_id, email, display_name, check_status FROM accounts "
+        "WHERE COALESCE(proxy_id,'')<>'' ORDER BY created_at, rowid"
+    ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for proxy_id, email, display_name, check_status in rows:
+        out.setdefault(str(proxy_id), []).append({
+            "email": email or "",
+            "display_name": display_name or "",
+            "check_status": check_status or "",
+        })
+    return out
+
+
 def update_account_check(conn, email, status, checked_at) -> bool:
     """更新单个账号的存活检测结果，返回是否有行被更新。"""
     cur = conn.execute(
