@@ -61,9 +61,9 @@ docker compose up -d
 「账号管理」页支持完整的增删改查：
 
 - **增**：「新增账号」手动录入已有账号，只有邮箱必填，可同时填写备注、密码、sessionKey、mailUrl、mailKey，并从代理池中选择代理；邮箱已存在时拒绝（不会覆盖）。也可以继续用「导入 SK…」「手动登录…」批量/交互式建号。
-- **查**：按邮箱 / 备注 / 代理名称或地址 / sessionKey 搜索，并按存活检测结果（有效、失效、被拦截、未检测）、是否已获取、是否有 sessionKey 筛选。
-- **套餐**：每个账号的邮箱旁显示 Claude 套餐徽章（Free / Pro / Max 5x / Max 20x / Team / Enterprise），悬停可看各组织的套餐与 `rate_limit_tier`，并可按套餐筛选。套餐在检测 sessionKey（单个检测，或勾选后「检测」批量检测）、导入 SK、接管取 sk、列组织和 OAuth 授权时，根据 `claude.ai/api/organizations` 返回的组织信息自动识别：`capabilities` 含 `claude_max` 为 Max（`rate_limit_tier` 为 `default_claude_max_20x` / `default_claude_max_5x` 区分倍数），含 `claude_pro` 为 Pro，`raven_type` 为 `enterprise` / `team` 为 Enterprise / Team，只有 `chat` 为 Free。账号属于多个组织时，以 OAuth 授权的组织为准，否则取最高的套餐（只有 `api` 能力的 Console 组织不参与），其它不同套餐的组织在徽章上显示为「+N」。检测失败时保留上次识别的结果。
-- **改**：「编辑」可修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。勾选账号后可「设置代理」批量更换代理。
+- **查**：账号以表格列出（账号、订阅、存活检测、OAuth、获取、代理与操作列；窄屏横向滚动时操作列固定在右侧），点击「账号 / 订阅 / 存活检测 / OAuth / 获取」表头可排序（再点反向，第三次恢复默认的最新添加在前）。按邮箱 / 备注 / 代理名称或地址 / sessionKey / 订阅搜索，并用两个独立的下拉框组合筛选：状态（有效、失效、被拦截、未检测、是否已获取、是否有 sessionKey、是否已授权 OAuth）和订阅（Max 全部 / Max 20x / Max 5x / Pro / Team / Enterprise 合并或单独 / Free / 未识别），每个选项后显示对应的账号数。
+- **套餐**：表格「订阅」列显示每个账号的 Claude 套餐徽章（Free / Pro / Max 5x / Max 20x / Team / Enterprise），悬停可看各组织的套餐与 `rate_limit_tier`，可按订阅筛选和排序。套餐在检测 sessionKey（单个检测，或勾选后「检测」批量检测）、导入 SK、接管取 sk、列组织和 OAuth 授权时，根据 `claude.ai/api/organizations` 返回的组织信息自动识别：`capabilities` 含 `claude_max` 为 Max（`rate_limit_tier` 为 `default_claude_max_20x` / `default_claude_max_5x` 区分倍数），含 `claude_pro` 为 Pro，`raven_type` 为 `enterprise` / `team` 为 Enterprise / Team，只有 `chat` 为 Free。账号属于多个组织时，以 OAuth 授权的组织为准，否则取最高的套餐（只有 `api` 能力的 Console 组织不参与），其它不同套餐的组织在徽章上显示为「+N」。检测失败时保留上次识别的结果。
+- **改**：点击邮箱或「编辑」按钮在右侧抽屉中修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。勾选账号后可「设置代理」批量更换代理。
 - **删**：每行的删除按钮单个删除，或勾选（支持全选当前筛选结果）后「删除所选」批量删除，均需二次确认。
 
 **账号代理只能从代理池选择**，不能手填代理地址。账号记录 `proxy_id`（代理池条目 ID）和 `proxy`（该条目地址的副本，检测、接管、OAuth、导出仍读它）：
@@ -194,7 +194,7 @@ scope 为 `user:profile user:inference user:sessions:claude_code user:mcp_server
 （内部授权接口不支持 `org:create_api_key`）。claude.ai 请求使用浏览器 TLS 指纹，并走账号绑定的代理。
 
 - 账号页每行的「OAuth」按钮为单个账号授权（已授权时显示「重新授权」），勾选后可「获取 OAuth」批量授权；
-  「编辑」展开后可复制 access_token / refresh_token / 组织名称与 UUID / 账号 UUID。筛选里可按是否已授权过滤。
+  「编辑」抽屉里可复制 access_token / refresh_token / 组织名称与 UUID / 账号 UUID。筛选里可按是否已授权过滤。
 - **选择组织（工作空间）**：一个 Claude 账号可能同时属于多个组织（如学校的
   「Northeastern University」与「Premium Seat - Northeastern University」）。单个授权 / 重新授权时，
   账号有多个组织就会弹窗让你选，令牌的额度与权限取决于所选组织；只有一个组织时直接授权。

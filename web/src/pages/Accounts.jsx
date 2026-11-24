@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { toast } from "sonner";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Building2,
   Check,
-  ChevronUp,
   Copy,
   Crown,
   Download,
@@ -38,7 +40,15 @@ import { api } from "../api.js";
 import { cn } from "@/lib/utils";
 import { maskProxyUrl, parseProxyUrl } from "@/lib/proxy";
 import { relTime } from "@/lib/time";
-import { matchPlan, otherPlanCount, planLabel, planTone, planTooltip } from "@/lib/plan";
+import {
+  matchPlanFilter,
+  otherPlanCount,
+  planFilterOptions,
+  planLabel,
+  planRank,
+  planTone,
+  planTooltip,
+} from "@/lib/plan";
 import { StatusBadge } from "@/components/status-badge";
 import { Pill } from "@/components/pill";
 import { PageHeader } from "@/components/page-header";
@@ -70,6 +80,22 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { OptionSelect } from "@/components/option-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   InputGroup,
   InputGroupAddon,
@@ -103,30 +129,26 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// 账号列表的筛选项：按检测状态 / 获取与授权 / 套餐分段
-const FILTER_OPTIONS = [
-  { value: "all", label: "全部" },
-  { separator: true },
-  { value: "alive", label: "有效" },
-  { value: "dead", label: "失效" },
-  { value: "blocked", label: "被拦截" },
-  { value: "unchecked", label: "未检测" },
-  { separator: true },
-  { value: "claimed", label: "已获取" },
-  { value: "unclaimed", label: "未获取" },
-  { value: "no_sk", label: "无 sessionKey" },
-  { value: "oauth", label: "已授权 OAuth" },
-  { value: "no_oauth", label: "未授权 OAuth" },
-  { separator: true },
-  { value: "plan_max", label: "套餐：Max" },
-  { value: "plan_pro", label: "套餐：Pro" },
-  { value: "plan_team", label: "套餐：Team / Enterprise" },
-  { value: "plan_free", label: "套餐：Free" },
-  { value: "plan_none", label: "套餐：未识别" },
+// 状态筛选（订阅单独一个下拉框，见 PLAN_FILTERS）；null 是下拉框里的分隔线
+const FILTERS = [
+  ["all", "全部状态"],
+  null,
+  ["alive", "有效"],
+  ["dead", "失效"],
+  ["blocked", "被拦截"],
+  ["unchecked", "未检测"],
+  null,
+  ["claimed", "已获取"],
+  ["unclaimed", "未获取"],
+  ["no_sk", "无 sessionKey"],
+  ["oauth", "已授权 OAuth"],
+  ["no_oauth", "未授权 OAuth"],
 ];
 
+// 订阅下拉框里这些选项前加分隔线：Max 系列 / Pro / Team 系列 / Free 与未识别
+const PLAN_SEPARATE_BEFORE = new Set(["group:max", "pro", "group:team", "free"]);
+
 function matchFilter(a, filter) {
-  if (filter.startsWith("plan_")) return matchPlan(a.plan, filter.slice(5));
   switch (filter) {
     case "alive":
     case "dead":
@@ -156,33 +178,71 @@ function matchQuery(a, q, proxyById) {
     .some((v) => String(v || "").toLowerCase().includes(q));
 }
 
-const AVATAR_TONES = [
-  "bg-primary/14 text-primary",
-  "bg-info/14 text-info",
-  "bg-success/14 text-success",
-  "bg-warning/16 text-warning",
-  "bg-highlight/14 text-highlight",
-];
+// 可排序的列：dir 是首次点击的方向；value 返回 null 表示缺失，不论升降序都排在最后
+function timeValue(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : t;
+}
 
-function Avatar({ email }) {
-  const text = String(email || "?");
-  const hash = [...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+const SORTS = {
+  email: { dir: "asc", value: (a) => String(a.email || "").toLowerCase() },
+  plan: { dir: "desc", value: (a) => planRank(a.plan) || null },
+  check: { dir: "desc", value: (a) => (a.check_status ? timeValue(a.checked_at) ?? 0 : null) },
+  oauth: { dir: "desc", value: (a) => (a.access_token ? timeValue(a.oauth_expires_at) ?? 0 : null) },
+  claimed: { dir: "desc", value: (a) => timeValue(a.claimed_at) },
+};
+
+function sortAccounts(list, sort) {
+  const spec = SORTS[sort.key];
+  if (!spec) return list;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return list
+    .map((a) => [a, spec.value(a)])
+    .sort(([, x], [, y]) => {
+      if (x === y) return 0;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (x < y ? -1 : 1) * sign;
+    })
+    .map(([a]) => a);
+}
+
+// 可点击排序的表头：首次点击按默认方向，再点反向，第三次恢复默认顺序（最新添加在前）
+function SortHead({ label, sortKey, sort, onSort, className }) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold uppercase max-sm:hidden",
-        AVATAR_TONES[hash % AVATAR_TONES.length],
-      )}
+    <TableHead
+      className={className}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
     >
-      {text[0]}
-    </span>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "-mx-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+          active && "text-foreground",
+        )}
+      >
+        {label}
+        <Icon className={cn("size-3.5", !active && "opacity-40")} />
+      </button>
+    </TableHead>
   );
 }
 
+const Dash = () => <span className="text-muted-foreground/50">—</span>;
+
+// 表格行的悬停 / 选中底色写在 --row-bg 里；吸右的操作列用实底（bg-card）遮住横向滚动的内容，
+// 再叠一层同一变量的渐变，保证与整行底色一致
+const ROW_BG =
+  "bg-(--row-bg) [--row-bg:transparent] hover:[--row-bg:color-mix(in_oklab,var(--color-muted)_50%,transparent)] data-[state=selected]:[--row-bg:color-mix(in_oklab,var(--color-primary)_6%,transparent)]";
+const STICKY_BG = "bg-card bg-[linear-gradient(var(--row-bg),var(--row-bg))]";
+
 // 账号绑定的代理：显示代理池条目名称；地址不在代理池时（无法迁移的旧数据）黄色提示
 function ProxyBadge({ acct, proxyById }) {
-  if (!acct.proxy) return null;
+  if (!acct.proxy) return <Dash />;
   const entry = proxyById[acct.proxy_id];
   if (!entry) {
     return (
@@ -198,7 +258,7 @@ function ProxyBadge({ acct, proxyById }) {
   return (
     <Badge
       variant="outline"
-      className="max-w-48 font-normal text-muted-foreground"
+      className="max-w-36 font-normal text-muted-foreground"
       title={[addr, entry.location].filter(Boolean).join(" · ")}
     >
       <Globe />
@@ -212,7 +272,7 @@ const LIVE_TONE = { alive: "success", dead: "danger", blocked: "warning", error:
 const LIVE_ICON = { alive: ShieldCheck, dead: ShieldX, blocked: ShieldAlert, error: ShieldQuestionMark };
 
 function LiveBadge({ status, checkedAt, detail }) {
-  if (!status) return null;
+  if (!status) return <span className="text-xs text-muted-foreground">未检测</span>;
   const Icon = LIVE_ICON[status] || ShieldQuestionMark;
   return (
     <Pill tone={LIVE_TONE[status] || "muted"} title={detail || ""}>
@@ -245,11 +305,11 @@ const PLAN_ICON = {
 
 // 账号套餐：检测 sessionKey / 列组织 / OAuth 授权时自动识别；属于多个不同套餐的组织时显示 +N
 function PlanBadge({ acct }) {
-  if (!acct.plan) return null;
+  if (!acct.plan) return <Dash />;
   const Icon = PLAN_ICON[acct.plan];
   const others = otherPlanCount(acct);
   return (
-    <Pill tone={planTone(acct.plan)} title={planTooltip(acct)} className="shrink-0 self-center">
+    <Pill tone={planTone(acct.plan)} title={planTooltip(acct)}>
       {Icon ? <Icon /> : null}
       {planLabel(acct.plan)}
       {others ? <span className="font-normal opacity-70">+{others}</span> : null}
@@ -258,7 +318,7 @@ function PlanBadge({ acct }) {
 }
 
 function OAuthBadge({ acct }) {
-  if (!acct.access_token) return null;
+  if (!acct.access_token) return <Dash />;
   const expired = acct.oauth_expires_at && new Date(acct.oauth_expires_at).getTime() <= Date.now();
   return (
     <Pill
@@ -268,10 +328,18 @@ function OAuthBadge({ acct }) {
       }`}
     >
       <KeyRound />
-      OAuth
-      {acct.oauth_expires_at ? (
-        <span className="font-normal opacity-70">· {untilTime(acct.oauth_expires_at)}</span>
-      ) : null}
+      {acct.oauth_expires_at ? untilTime(acct.oauth_expires_at) : "已授权"}
+    </Pill>
+  );
+}
+
+function ClaimedBadge({ acct }) {
+  if (!acct.claimed_at) return <Dash />;
+  return (
+    <Pill tone="highlight" title={`获取时间：${acct.claimed_at}`}>
+      <PackageCheck />
+      已获取
+      <span className="font-normal opacity-70">· {relTime(acct.claimed_at)}</span>
     </Pill>
   );
 }
@@ -309,6 +377,9 @@ export default function Accounts({ attach, running, navigate }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [planFilter, setPlanFilter] = useState("all");
+  // 表格排序：key 为空时保持接口顺序（最新添加在前）
+  const [sort, setSort] = useState({ key: "", dir: "desc" });
   const [selected, setSelected] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
   const [proxies, setProxies] = useState([]);
@@ -320,10 +391,50 @@ export default function Accounts({ attach, running, navigate }) {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return accounts.filter((a) => matchFilter(a, filter) && matchQuery(a, q, proxyById));
-  }, [accounts, query, filter, proxyById]);
+    const list = accounts.filter((a) =>
+      matchFilter(a, filter) && matchPlanFilter(a.plan, planFilter) && matchQuery(a, q, proxyById));
+    return sortAccounts(list, sort);
+  }, [accounts, query, filter, planFilter, sort, proxyById]);
   const selectedVisible = visible.filter((a) => selected.has(a.email));
   const allVisibleSelected = visible.length > 0 && selectedVisible.length === visible.length;
+  const filtered = filter !== "all" || planFilter !== "all" || !!query.trim();
+
+  // 下拉框选项带上各自的账号数
+  // 下拉框选项：数量显示在弹层右侧
+  const filterOptions = useMemo(
+    () => FILTERS.map((f) => (f
+      ? { value: f[0], label: f[1], hint: String(accounts.filter((a) => matchFilter(a, f[0])).length) }
+      : { separator: true })),
+    [accounts],
+  );
+  const planOptions = useMemo(
+    () => planFilterOptions(accounts, planFilter).flatMap((o) => {
+      const item = { value: o.value, label: o.label, hint: String(o.count) };
+      return PLAN_SEPARATE_BEFORE.has(o.value) ? [{ separator: true }, item] : [item];
+    }),
+    [accounts, planFilter],
+  );
+
+  const clearFilters = () => {
+    setQuery("");
+    setFilter("all");
+    setPlanFilter("all");
+  };
+
+  // 点击表头：默认方向 → 反向 → 恢复接口顺序
+  const toggleSort = (key) =>
+    setSort((s) => {
+      const first = SORTS[key].dir;
+      if (s.key !== key) return { key, dir: first };
+      if (s.dir === first) return { key, dir: first === "asc" ? "desc" : "asc" };
+      return { key: "", dir: "desc" };
+    });
+
+  // 编辑抽屉关闭动画期间账号已不在编辑态，沿用最后一次的账号数据继续渲染
+  const editingAcct = editingEmail ? accounts.find((a) => a.email === editingEmail) : null;
+  const lastEditAcct = useRef(null);
+  if (editingAcct) lastEditAcct.current = editingAcct;
+  const sheetAcct = editingAcct || lastEditAcct.current;
 
   const stats = useMemo(() => ({
     total: accounts.length,
@@ -784,7 +895,7 @@ export default function Accounts({ attach, running, navigate }) {
 
       <StatGrid>
         <StatCard index={0} label="账号总数" value={stats.total} icon={Users} tone="primary"
-          onClick={() => setFilter("all")} />
+          onClick={clearFilters} />
         <StatCard index={1} label="检测有效" value={stats.alive} icon={ShieldCheck} tone="success"
           onClick={() => setFilter("alive")} active={filter === "alive"} />
         <StatCard index={2} label="已授权 OAuth" value={stats.oauth} icon={KeyRound} tone="info"
@@ -859,7 +970,7 @@ export default function Accounts({ attach, running, navigate }) {
             </InputGroupAddon>
             <InputGroupInput
               value={query}
-              placeholder="搜索邮箱 / 备注 / 代理名称 / sessionKey"
+              placeholder="搜索邮箱 / 备注 / 代理名称 / sessionKey / 订阅"
               spellCheck={false}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -872,44 +983,40 @@ export default function Accounts({ attach, running, navigate }) {
             )}
           </InputGroup>
           <OptionSelect
-            aria-label="筛选"
-            className="w-full sm:w-48"
+            aria-label="状态筛选"
+            className={cn("w-full sm:w-44", filter !== "all" && "border-primary/60")}
             prefix={<ListFilter />}
             align="end"
             value={filter}
-            options={FILTER_OPTIONS}
+            options={filterOptions}
             onValueChange={setFilter}
           />
-        </div>
-
-        <div className="flex h-10 items-center gap-3 border-b bg-muted/30 px-4 text-xs text-muted-foreground">
-          <label className="flex cursor-pointer items-center gap-2.5 select-none">
-            <Checkbox
-              checked={allVisibleSelected ? true : selectedVisible.length > 0 ? "indeterminate" : false}
-              disabled={visible.length === 0}
-              onCheckedChange={toggleSelectAll}
-              aria-label="全选"
-            />
-            全选
-          </label>
-          <span className="tabular-nums">
-            {visible.length === accounts.length
-              ? `共 ${accounts.length} 个账号`
-              : `显示 ${visible.length} / ${accounts.length} 个`}
-            {selectedVisible.length > 0 ? `，已选 ${selectedVisible.length} 个` : ""}
-          </span>
+          <OptionSelect
+            aria-label="订阅筛选"
+            className={cn("w-full sm:w-48", planFilter !== "all" && "border-primary/60")}
+            prefix={<Crown />}
+            align="end"
+            value={planFilter}
+            options={planOptions}
+            onValueChange={setPlanFilter}
+          />
+          {filtered && (
+            <Button variant="ghost" onClick={clearFilters}>
+              <X /> 清除筛选
+            </Button>
+          )}
         </div>
 
         {!loaded ? (
           <div className="divide-y">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-6 px-4 py-3.5">
                 <Skeleton className="size-4" />
-                <Skeleton className="size-9 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3.5 w-56" />
-                  <Skeleton className="h-3 w-80 max-w-full" />
-                </div>
+                <Skeleton className="h-3.5 w-56" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-5 w-24 rounded-full max-md:hidden" />
+                <Skeleton className="h-5 w-24 rounded-full max-lg:hidden" />
+                <Skeleton className="ml-auto h-6 w-40" />
               </div>
             ))}
           </div>
@@ -933,206 +1040,182 @@ export default function Accounts({ attach, running, navigate }) {
               <EmptyDescription>换个关键词，或清除筛选条件后再看看。</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button variant="outline" onClick={() => { setQuery(""); setFilter("all"); }}>
+              <Button variant="outline" onClick={clearFilters}>
                 清除筛选
               </Button>
             </EmptyContent>
           </Empty>
         ) : (
-          <ul className="divide-y">
-            {visible.map((a, i) => {
-              const isEditing = editingEmail === a.email;
-              const isSelected = selected.has(a.email);
-              return (
-                <m.li
-                  key={a.email}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.015 }}
-                  className={cn("transition-colors", isSelected && "bg-primary/5", isEditing && "bg-muted/30")}
-                >
-                  <div className="flex items-center gap-3 px-4 py-3 max-md:flex-wrap">
-                    <Checkbox
-                      aria-label={`选择 ${a.email}`}
-                      checked={isSelected}
-                      onCheckedChange={() => toggleSelect(a.email)}
-                    />
-                    <Avatar email={a.email} />
-                    {/* 窄屏时信息区占满一行，操作按钮换到下一行 */}
-                    <div className="flex min-w-0 flex-1 flex-col gap-1.5 max-md:basis-[calc(100%-1.75rem)]">
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <span className="truncate text-sm font-medium" title={a.email}>{a.email}</span>
-                        <PlanBadge acct={a} />
-                        {a.display_name ? (
-                          <span className="shrink-0 truncate text-xs text-muted-foreground">{a.display_name}</span>
+          <Table>
+            <TableHeader className="bg-muted/30 text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10 pl-4">
+                  <Checkbox
+                    checked={allVisibleSelected ? true : selectedVisible.length > 0 ? "indeterminate" : false}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="全选当前列表"
+                  />
+                </TableHead>
+                <SortHead label="账号" sortKey="email" sort={sort} onSort={toggleSort} />
+                <SortHead label="订阅" sortKey="plan" sort={sort} onSort={toggleSort} />
+                <SortHead label="存活检测" sortKey="check" sort={sort} onSort={toggleSort} />
+                <SortHead label="OAuth" sortKey="oauth" sort={sort} onSort={toggleSort} />
+                <SortHead label="获取" sortKey="claimed" sort={sort} onSort={toggleSort} />
+                <TableHead>代理</TableHead>
+                <TableHead className="sticky right-0 z-10 bg-card bg-linear-to-r from-muted/30 to-muted/30 pr-4 text-right">
+                  操作
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((a, i) => {
+                const isEditing = editingEmail === a.email;
+                const isSelected = selected.has(a.email);
+                const act = androidAction(a);
+                const noSk = a.session_key ? null : "该账号没有 sessionKey";
+                return (
+                  <m.tr
+                    key={a.email}
+                    data-slot="table-row"
+                    data-state={isSelected ? "selected" : undefined}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.015 }}
+                    className={cn("border-b", ROW_BG)}
+                  >
+                    <TableCell className="pl-4">
+                      <Checkbox
+                        aria-label={`选择 ${a.email}`}
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelect(a.email)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex max-w-80 min-w-0 flex-col items-start gap-0.5">
+                        <div className="flex max-w-full min-w-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="min-w-0 truncate rounded-sm text-left font-medium outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+                            title={`${a.email}（点击编辑）`}
+                            onClick={() => startEdit(a)}
+                          >
+                            {a.email}
+                          </button>
+                          {/* 注册状态只在非成功时提示 */}
+                          {a.status !== "success" ? <StatusBadge status={a.status} /> : null}
+                        </div>
+                        {a.display_name || a.session_key ? (
+                          <div className="flex max-w-full min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                            {a.display_name ? (
+                              <span className="truncate" title={a.display_name}>{a.display_name}</span>
+                            ) : null}
+                            {a.session_key ? (
+                              <span className="shrink-0 font-mono text-[11px] opacity-70" title="sessionKey">
+                                {String(a.session_key).slice(7, 17)}…
+                              </span>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        <StatusBadge status={a.status} />
-                        <LiveBadge status={a.check_status} checkedAt={a.checked_at} detail={a.check_detail} />
-                        {a.claimed_at ? (
-                          <Pill tone="highlight" title={`获取时间：${a.claimed_at}`}>
-                            <PackageCheck />
-                            已获取
-                            <span className="font-normal opacity-70">· {relTime(a.claimed_at)}</span>
-                          </Pill>
-                        ) : null}
-                        <OAuthBadge acct={a} />
-                        <ProxyBadge acct={a} proxyById={proxyById} />
-                        {a.session_key ? (
-                          <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                            sk {String(a.session_key).slice(7, 17)}…
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-0.5 max-md:ml-auto">
-                      {a.session_key && (
-                        <TipButton variant="ghost" size="icon-sm" tip="检测 sessionKey 是否有效（顺带识别套餐）"
-                          onClick={() => doCheck(a.email)} disabled={checking === a.email}>
+                    </TableCell>
+                    <TableCell><PlanBadge acct={a} /></TableCell>
+                    <TableCell>
+                      <LiveBadge status={a.check_status} checkedAt={a.checked_at} detail={a.check_detail} />
+                    </TableCell>
+                    <TableCell><OAuthBadge acct={a} /></TableCell>
+                    <TableCell><ClaimedBadge acct={a} /></TableCell>
+                    <TableCell><ProxyBadge acct={a} proxyById={proxyById} /></TableCell>
+                    <TableCell className={cn("sticky right-0 z-10 pr-4", STICKY_BG)}>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <TipButton variant="ghost" size="icon-sm"
+                          tip={noSk || "检测 sessionKey 是否有效（顺带识别套餐）"}
+                          onClick={() => doCheck(a.email)} disabled={!!noSk || checking === a.email}>
                           {checking === a.email ? <Spinner /> : <HeartPulse />}
                         </TipButton>
-                      )}
-                      {a.session_key && (
                         <TipButton
                           variant="ghost"
                           size="icon-sm"
-                          tip={a.access_token
+                          tip={noSk || (a.access_token
                             ? "重新授权 OAuth（属于多个组织时可选择工作空间）"
-                            : "用 sessionKey 获取 OAuth 令牌（属于多个组织时可选择工作空间）"}
+                            : "用 sessionKey 获取 OAuth 令牌（属于多个组织时可选择工作空间）")}
                           onClick={() => runOAuth(a.email, { pickOrg: true })}
-                          disabled={authorizing.has(a.email)}
+                          disabled={!!noSk || authorizing.has(a.email)}
                         >
                           {authorizing.has(a.email) ? <Spinner /> : <KeyRound />}
                         </TipButton>
-                      )}
-                      {a.session_key && (
-                        <TipButton variant="ghost" size="icon-sm" tip="接管浏览器" className="text-info hover:text-info"
+                        <TipButton variant="ghost" size="icon-sm" tip={noSk || "接管浏览器"}
+                          className="text-info hover:text-info" disabled={!!noSk}
                           onClick={() => startTakeover(a.email)}>
                           <MonitorPlay />
                         </TipButton>
-                      )}
-                      {/* 没有 sessionKey 的行补占位，让各行操作按钮列对齐 */}
-                      {!a.session_key && <span aria-hidden="true" className="w-[5.5rem] shrink-0 max-md:hidden" />}
-                      {(() => {
-                        const act = androidAction(a);
-                        return (
-                          <TipButton
-                            variant={act.active ? "secondary" : "ghost"}
-                            size="icon-sm"
-                            tip={act.tip}
-                            className={cn(act.active && "text-success hover:text-success")}
-                            disabled={act.disabled}
-                            onClick={act.onClick}
-                          >
-                            <Smartphone />
-                          </TipButton>
-                        );
-                      })()}
-                      <TipButton variant="ghost" size="icon-sm" tip={copiedEmail === a.email ? "已复制" : "复制账号信息"}
-                        onClick={() => copyLine(a)}>
-                        {copiedEmail === a.email ? <Check className="text-success" /> : <Copy />}
-                      </TipButton>
-                      <TipButton
-                        variant={isEditing ? "secondary" : "ghost"}
-                        size="icon-sm"
-                        tip={isEditing ? "收起" : "编辑"}
-                        onClick={() => (isEditing ? setEditingEmail("") : startEdit(a))}
-                      >
-                        {isEditing ? <ChevronUp /> : <Pencil />}
-                      </TipButton>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon-sm" aria-label={`${a.email} 的更多操作`}>
-                            <MoreHorizontal />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem disabled={running} onSelect={() => doRerun(a.email)}>
-                            <RotateCcw /> 重跑注册
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => toggleClaimed(a)}>
-                            <PackageCheck /> {a.claimed_at ? "取消已获取" : "标记已获取"}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTargets([a.email])}>
-                            <Trash2 /> 删除账号
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                  <AnimatePresence initial={false}>
-                    {isEditing && (
-                      <m.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="overflow-hidden"
-                      >
-                        <div className="flex flex-col gap-4 border-t border-dashed px-4 py-4 md:pl-[4.75rem]">
-                          <AccountFields
-                            form={editForm}
-                            setForm={setEditForm}
-                            disabled={saving}
-                            idPrefix={`edit-${a.email}`}
-                            proxies={proxies}
-                            legacyProxy={a.proxy || ""}
-                          />
-                          {a.access_token && (
-                            <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
-                              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-                                <span className="flex items-center gap-1.5 font-medium text-foreground">
-                                  <KeyRound className="size-3.5 text-info" /> OAuth 令牌
-                                </span>
-                                <span>授权于 {a.oauth_at || "未知"}</span>
-                                <span>· access_token 过期 {a.oauth_expires_at || "未知"}</span>
-                              </div>
-                              <div className="divide-y divide-dashed">
-                                {OAUTH_COPY_FIELDS.filter(([k]) => a[k]).map(([k, label]) => (
-                                  <div key={k} className="flex items-center gap-2 py-1">
-                                    <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
-                                    <span className="min-w-0 flex-1 truncate font-mono">
-                                      {k.endsWith("_token") ? `${String(a[k]).slice(0, 18)}…` : a[k]}
-                                    </span>
-                                    <TipButton
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      tip={copiedEmail === `${a.email}:${k}` ? "已复制" : `复制 ${label}`}
-                                      onClick={() => copyText(String(a[k]), `${a.email}:${k}`)}
-                                    >
-                                      {copiedEmail === `${a.email}:${k}` ? <Check className="text-success" /> : <Copy />}
-                                    </TipButton>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button onClick={saveEdit} disabled={saving}>
-                              {saving ? <Spinner /> : <Check />}
-                              {saving ? "保存中…" : "保存"}
+                        <TipButton
+                          variant={act.active ? "secondary" : "ghost"}
+                          size="icon-sm"
+                          tip={act.tip}
+                          className={cn(act.active && "text-success hover:text-success")}
+                          disabled={act.disabled}
+                          onClick={act.onClick}
+                        >
+                          <Smartphone />
+                        </TipButton>
+                        <TipButton variant="ghost" size="icon-sm" tip={copiedEmail === a.email ? "已复制" : "复制账号信息"}
+                          onClick={() => copyLine(a)}>
+                          {copiedEmail === a.email ? <Check className="text-success" /> : <Copy />}
+                        </TipButton>
+                        <TipButton
+                          variant={isEditing ? "secondary" : "ghost"}
+                          size="icon-sm"
+                          tip="编辑"
+                          onClick={() => startEdit(a)}
+                        >
+                          <Pencil />
+                        </TipButton>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label={`${a.email} 的更多操作`}>
+                              <MoreHorizontal />
                             </Button>
-                            <Button variant="outline" onClick={() => setEditingEmail("")}>
-                              取消
-                            </Button>
-                            <span className="flex-1" />
-                            <Button variant="outline" onClick={() => toggleClaimed(a)}>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem disabled={running} onSelect={() => doRerun(a.email)}>
+                              <RotateCcw /> 重跑注册
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => toggleClaimed(a)}>
                               <PackageCheck /> {a.claimed_at ? "取消已获取" : "标记已获取"}
-                            </Button>
-                            <Button variant="destructive" onClick={() => setDeleteTargets([a.email])}>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTargets([a.email])}>
                               <Trash2 /> 删除账号
-                            </Button>
-                          </div>
-                        </div>
-                      </m.div>
-                    )}
-                  </AnimatePresence>
-                </m.li>
-              );
-            })}
-          </ul>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </m.tr>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+
+        {loaded && accounts.length > 0 && (
+          <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {visible.length === accounts.length
+                ? `共 ${accounts.length} 个账号`
+                : `显示 ${visible.length} / ${accounts.length} 个账号`}
+              {selectedVisible.length > 0 ? `，已选 ${selectedVisible.length} 个` : ""}
+            </span>
+            {sort.key && (
+              <button
+                type="button"
+                className="ml-auto rounded-sm underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                onClick={() => setSort({ key: "", dir: "desc" })}
+              >
+                恢复默认排序
+              </button>
+            )}
+          </div>
         )}
       </Card>
 
@@ -1198,6 +1281,88 @@ export default function Accounts({ attach, running, navigate }) {
         )}
       </AnimatePresence>
 
+      {/* 编辑账号：右侧抽屉 */}
+      <Sheet open={!!editingAcct} onOpenChange={(o) => !o && !saving && setEditingEmail("")}>
+        <SheetContent className="w-full gap-0 data-[side=right]:sm:max-w-xl">
+          {sheetAcct && (
+            <>
+              <SheetHeader className="border-b pr-12">
+                <SheetTitle className="flex items-center gap-2">
+                  <Pencil className="size-4 text-primary" /> 编辑账号
+                </SheetTitle>
+                <SheetDescription className="truncate" title={sheetAcct.email}>
+                  {sheetAcct.email}
+                </SheetDescription>
+                <div className="flex flex-wrap items-center gap-1.5 pt-2 text-xs">
+                  {sheetAcct.plan ? <PlanBadge acct={sheetAcct} /> : null}
+                  <StatusBadge status={sheetAcct.status} />
+                  <LiveBadge status={sheetAcct.check_status} checkedAt={sheetAcct.checked_at}
+                    detail={sheetAcct.check_detail} />
+                  {sheetAcct.claimed_at ? <ClaimedBadge acct={sheetAcct} /> : null}
+                </div>
+              </SheetHeader>
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+                <AccountFields
+                  form={editForm}
+                  setForm={setEditForm}
+                  disabled={saving}
+                  idPrefix="edit"
+                  proxies={proxies}
+                  legacyProxy={sheetAcct.proxy || ""}
+                />
+                {sheetAcct.access_token && (
+                  <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
+                    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+                      <span className="flex items-center gap-1.5 font-medium text-foreground">
+                        <KeyRound className="size-3.5 text-info" /> OAuth 令牌
+                      </span>
+                      <span>授权于 {sheetAcct.oauth_at || "未知"}</span>
+                      <span>· access_token 过期 {sheetAcct.oauth_expires_at || "未知"}</span>
+                    </div>
+                    <div className="divide-y divide-dashed">
+                      {OAUTH_COPY_FIELDS.filter(([k]) => sheetAcct[k]).map(([k, label]) => {
+                        const key = `${sheetAcct.email}:${k}`;
+                        return (
+                          <div key={k} className="flex items-center gap-2 py-1">
+                            <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+                            <span className="min-w-0 flex-1 truncate font-mono">
+                              {k.endsWith("_token") ? `${String(sheetAcct[k]).slice(0, 18)}…` : sheetAcct[k]}
+                            </span>
+                            <TipButton
+                              variant="ghost"
+                              size="icon-xs"
+                              tip={copiedEmail === key ? "已复制" : `复制 ${label}`}
+                              onClick={() => copyText(String(sheetAcct[k]), key)}
+                            >
+                              {copiedEmail === key ? <Check className="text-success" /> : <Copy />}
+                            </TipButton>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <SheetFooter className="flex-row flex-wrap items-center border-t">
+                <Button onClick={saveEdit} disabled={saving || !editingAcct}>
+                  {saving ? <Spinner /> : <Check />}
+                  {saving ? "保存中…" : "保存"}
+                </Button>
+                <Button variant="outline" onClick={() => setEditingEmail("")} disabled={saving}>
+                  取消
+                </Button>
+                <span className="flex-1" />
+                <Button variant="outline" onClick={() => toggleClaimed(sheetAcct)} disabled={saving}>
+                  <PackageCheck /> {sheetAcct.claimed_at ? "取消已获取" : "标记已获取"}
+                </Button>
+                <Button variant="destructive" onClick={() => setDeleteTargets([sheetAcct.email])} disabled={saving}>
+                  <Trash2 /> 删除
+                </Button>
+              </SheetFooter>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
       <AlertDialog
         open={deleteTargets.length > 0}
         onOpenChange={(o) => !o && setDeleteTargets([])}

@@ -47,6 +47,56 @@ export function matchPlan(plan, group) {
   return PLAN_GROUPS[plan] === group;
 }
 
+// 订阅筛选项：[值, 显示名]。group:* 按 PLAN_GROUPS 分组匹配，none 为未识别，其余按套餐标识精确匹配。
+// 「Max 倍数未知」只在确有账号时才列出，见 planFilterOptions。
+export const PLAN_FILTERS = [
+  ["all", "全部订阅"],
+  ["group:max", "Max 全部"],
+  ["max_20x", "Max 20x"],
+  ["max_5x", "Max 5x"],
+  ["max", "Max 倍数未知"],
+  ["pro", "Pro"],
+  ["group:team", "Team / Enterprise"],
+  ["team", "Team"],
+  ["enterprise", "Enterprise"],
+  ["free", "Free"],
+  ["none", "未识别"],
+];
+
+export function matchPlanFilter(plan, filter) {
+  if (!filter || filter === "all") return true;
+  if (filter.startsWith("group:")) return matchPlan(plan, filter.slice(6));
+  if (filter === "none") return matchPlan(plan, "none");
+  return plan === filter;
+}
+
+// 订阅下拉框的选项与每项数量；数量为 0 的「Max 倍数未知」不显示（当前选中时除外）
+export function planFilterOptions(accounts, current = "all") {
+  return PLAN_FILTERS.map(([value, label]) => ({
+    value,
+    label,
+    count: value === "all"
+      ? accounts.length
+      : accounts.filter((a) => matchPlanFilter(a.plan, value)).length,
+  })).filter((o) => o.value !== "max" || o.count > 0 || current === "max");
+}
+
+// 排序用的套餐等级：越高越大；未识别为 0
+const PLAN_RANK = {
+  max_20x: 8,
+  max_5x: 7,
+  max: 6,
+  enterprise: 5,
+  team: 4,
+  pro: 3,
+  free: 2,
+  api: 1,
+};
+
+export function planRank(plan) {
+  return PLAN_RANK[plan] || 0;
+}
+
 // plan_orgs 在库里是 JSON 文本；容错解析成数组（接口也可能已是数组）
 export function parsePlanOrgs(value) {
   if (Array.isArray(value)) return value;
