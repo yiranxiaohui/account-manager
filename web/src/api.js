@@ -214,7 +214,7 @@ export const api = {
       body: JSON.stringify(body),
     }).then(j),
 
-  // { usage: { 代理池条目 id: 绑定的账号数 } }
+  // { usage: { 代理池条目 id: 绑定的账号数 }, accounts: { 代理池条目 id: [{ email, display_name, check_status }] } }
   proxyUsage: () => fetch("/api/proxies/usage").then(j),
 
   xuiTest: (node) =>

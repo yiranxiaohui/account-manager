@@ -6,7 +6,8 @@ import { Select as SelectPrimitive } from "radix-ui"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 // shadcn/ui radix-nova Select。项目改动：默认 popper 定位（与下拉菜单一致，长列表不会盖住触发器）、
-// 弹层至少与触发器等宽且限高、打开时箭头翻转、选中项用品牌色勾选，SelectItem 支持右侧的 hint 说明。
+// 弹层至少与触发器等宽且限高、打开时箭头翻转、选中项用品牌色勾选，SelectItem 支持右侧的 hint 说明
+// 与不截断的 meta 附加信息（如账号数）。
 
 function Select({
   ...props
@@ -117,6 +118,7 @@ function SelectItem({
   className,
   children,
   hint,
+  meta,
   ...props
 }) {
   return (
@@ -136,12 +138,18 @@ function SelectItem({
       <span className="flex min-w-0 items-center *:flex *:min-w-0 *:items-center *:gap-2 *:overflow-hidden">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       </span>
-      {hint ? (
-        <span
-          data-slot="select-item-hint"
-          className="ml-auto min-w-0 shrink-[3] truncate pl-4 text-xs font-normal text-muted-foreground tabular-nums"
-        >
-          {hint}
+      {hint || meta != null ? (
+        <span className="ml-auto flex min-w-0 shrink-[3] items-center gap-3 pl-4 text-xs font-normal text-muted-foreground tabular-nums">
+          {hint ? (
+            <span data-slot="select-item-hint" className="min-w-0 truncate">
+              {hint}
+            </span>
+          ) : null}
+          {meta != null ? (
+            <span data-slot="select-item-meta" className="flex shrink-0 items-center gap-1">
+              {meta}
+            </span>
+          ) : null}
         </span>
       ) : null}
     </SelectPrimitive.Item>
