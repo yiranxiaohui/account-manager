@@ -11,6 +11,7 @@ import {
   Crown,
   Download,
   ExternalLink,
+  Gauge,
   Globe,
   HeartPulse,
   KeyRound,
@@ -49,6 +50,21 @@ import {
   planTone,
   planTooltip,
 } from "@/lib/plan";
+import {
+  displayWindows,
+  parseUsage,
+  resetIn,
+  spendText,
+  usageSortValue,
+  usageSummary,
+  usageTone,
+  usageTooltip,
+  windowExpired,
+  windowLabel,
+  windowPercent,
+  windowShort,
+} from "@/lib/usage";
+import { TONE_TEXT } from "@/lib/tones";
 import { StatusBadge } from "@/components/status-badge";
 import { Pill } from "@/components/pill";
 import { PageHeader } from "@/components/page-header";
@@ -188,6 +204,8 @@ function timeValue(iso) {
 const SORTS = {
   email: { dir: "asc", value: (a) => String(a.email || "").toLowerCase() },
   plan: { dir: "desc", value: (a) => planRank(a.plan) || null },
+  // 额度首次点击按升序：剩余额度多的在前
+  usage: { dir: "asc", value: (a) => usageSortValue(a) },
   check: { dir: "desc", value: (a) => (a.check_status ? timeValue(a.checked_at) ?? 0 : null) },
   oauth: { dir: "desc", value: (a) => (a.access_token ? timeValue(a.oauth_expires_at) ?? 0 : null) },
   claimed: { dir: "desc", value: (a) => timeValue(a.claimed_at) },
@@ -314,6 +332,132 @@ function PlanBadge({ acct }) {
       {planLabel(acct.plan)}
       {others ? <span className="font-normal opacity-70">+{others}</span> : null}
     </Pill>
+  );
+}
+
+const BAR_TONE = {
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+  muted: "bg-muted-foreground/40",
+};
+
+// 一条用量进度：柱子长度是已用百分比，颜色跟随接口给出的严重程度
+function UsageBar({ percent, tone, className }) {
+  return (
+    <div className={cn("h-1.5 overflow-hidden rounded-full bg-muted", className)}>
+      <m.div
+        className={cn("h-full rounded-full", BAR_TONE[tone] || BAR_TONE.muted)}
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.min(100, Math.max(0, percent || 0))}%` }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      />
+    </div>
+  );
+}
+
+function UsageRow({ label, title, percent, tone, text }) {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] leading-none">
+      <span className="w-9 shrink-0 truncate text-muted-foreground" title={title}>{label}</span>
+      <UsageBar percent={percent} tone={tone} className="w-14 shrink-0" />
+      <span className={cn("whitespace-nowrap tabular-nums", TONE_TEXT[tone] || TONE_TEXT.muted)}>{text}</span>
+    </div>
+  );
+}
+
+// 账号用量额度：检测 sessionKey 时顺带从 claude.ai 取主组织的用量。Pro / Max 显示 5 小时、
+// 7 天与各模型周限额，Enterprise 显示用量额度金额；已过重置时间的窗口按 0 灰显
+function UsageCell({ acct }) {
+  const usage = parseUsage(acct.usage);
+  const title = usageTooltip(acct);
+  if (!usage) return <span title={title}><Dash /></span>;
+  const rows = displayWindows(usage);
+  if (!rows.length && !usage.spend) {
+    return <span className="text-xs text-muted-foreground" title={title}>无数据</span>;
+  }
+  return (
+    <div className="flex flex-col gap-1" title={title}>
+      {rows.map((w) => {
+        const pct = windowPercent(w);
+        return (
+          <UsageRow
+            key={`${w.kind}:${w.model}`}
+            label={windowShort(w)}
+            title={windowLabel(w)}
+            percent={pct}
+            tone={w.missing ? "muted" : usageTone(w)}
+            text={`${pct}%`}
+          />
+        );
+      })}
+      {usage.spend ? (
+        <UsageRow
+          label="额度"
+          title="用量额度"
+          percent={usage.spend.percent}
+          tone={usageTone(usage.spend)}
+          text={spendText(usage.spend)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// 编辑抽屉里的额度明细：每个窗口一行，带重置时间
+function UsageDetail({ acct }) {
+  const usage = parseUsage(acct.usage);
+  if (!usage) return null;
+  const rows = displayWindows(usage);
+  return (
+    <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <Gauge className="size-3.5 text-primary" /> 用量额度
+        </span>
+        {usage.org_name ? <span className="truncate">{usage.org_name}</span> : null}
+        {acct.usage_checked_at ? (
+          <span title={acct.usage_checked_at}>· 获取于 {relTime(acct.usage_checked_at)}</span>
+        ) : null}
+      </div>
+      {!rows.length && !usage.spend ? (
+        <p className="text-muted-foreground">该组织没有返回用量限额（Free 套餐不提供）。</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {rows.map((w) => {
+            const pct = windowPercent(w);
+            const expired = windowExpired(w);
+            const tone = w.missing ? "muted" : usageTone(w);
+            return (
+              <div key={`${w.kind}:${w.model}`} className="grid grid-cols-[7rem_1fr_auto] items-center gap-2">
+                <span className="flex min-w-0 items-center gap-1.5" title={windowLabel(w)}>
+                  <span className="truncate">{windowLabel(w)}</span>
+                  {w.active ? (
+                    <span className={cn("size-1.5 shrink-0 rounded-full bg-current", TONE_TEXT[tone])}
+                      title="当前生效的限额" />
+                  ) : null}
+                </span>
+                <UsageBar percent={pct} tone={tone} />
+                <span className="text-right whitespace-nowrap text-muted-foreground tabular-nums">
+                  <span className={cn("font-medium", TONE_TEXT[tone])}>{pct}%</span>
+                  {w.missing ? " · 未开始" : expired ? ` · 已重置（上次 ${Math.round(w.percent)}%）` : ` · ${resetIn(w.resets_at)}`}
+                </span>
+              </div>
+            );
+          })}
+          {usage.spend ? (
+            <div className="grid grid-cols-[7rem_1fr_auto] items-center gap-2">
+              <span>用量额度</span>
+              <UsageBar percent={usage.spend.percent} tone={usageTone(usage.spend)} />
+              <span className={cn("text-right font-medium whitespace-nowrap tabular-nums",
+                TONE_TEXT[usageTone(usage.spend)])}>
+                {spendText(usage.spend)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -552,7 +696,10 @@ export default function Accounts({ attach, running, navigate }) {
     try {
       const res = await checkOne(acctEmail);
       if (res.plan) {
-        toast.success(`「${acctEmail}」${LIVE_LABEL[res.status] || res.status}，套餐 ${planLabel(res.plan)}`);
+        const usage = usageSummary(res.usage);
+        toast.success(
+          `「${acctEmail}」${LIVE_LABEL[res.status] || res.status}，套餐 ${planLabel(res.plan)}${usage ? `，${usage}` : ""}`,
+        );
       }
     } catch (e) {
       toast.error(`「${acctEmail}」检测失败（${e.status || "?"}）`);
@@ -561,10 +708,10 @@ export default function Accounts({ attach, running, navigate }) {
     }
   }
 
-  // 检测一个账号并合并结果（存活状态 + 识别出的套餐），返回接口结果
+  // 检测一个账号并合并结果（存活状态 + 识别出的套餐 + 用量额度），返回接口结果
   async function checkOne(acctEmail) {
     const res = await api.checkAccount(acctEmail);
-    const { status, detail, ...rest } = res;
+    const { status, detail, usage_error: _usageError, ...rest } = res;
     setAccounts((list) =>
       list.map((a) =>
         a.email === acctEmail
@@ -1058,6 +1205,7 @@ export default function Accounts({ attach, running, navigate }) {
                 </TableHead>
                 <SortHead label="账号" sortKey="email" sort={sort} onSort={toggleSort} />
                 <SortHead label="订阅" sortKey="plan" sort={sort} onSort={toggleSort} />
+                <SortHead label="额度" sortKey="usage" sort={sort} onSort={toggleSort} />
                 <SortHead label="存活检测" sortKey="check" sort={sort} onSort={toggleSort} />
                 <SortHead label="OAuth" sortKey="oauth" sort={sort} onSort={toggleSort} />
                 <SortHead label="获取" sortKey="claimed" sort={sort} onSort={toggleSort} />
@@ -1119,6 +1267,7 @@ export default function Accounts({ attach, running, navigate }) {
                       </div>
                     </TableCell>
                     <TableCell><PlanBadge acct={a} /></TableCell>
+                    <TableCell><UsageCell acct={a} /></TableCell>
                     <TableCell>
                       <LiveBadge status={a.check_status} checkedAt={a.checked_at} detail={a.check_detail} />
                     </TableCell>
@@ -1128,7 +1277,7 @@ export default function Accounts({ attach, running, navigate }) {
                     <TableCell className={cn("sticky right-0 z-10 pr-4", STICKY_BG)}>
                       <div className="flex items-center justify-end gap-0.5">
                         <TipButton variant="ghost" size="icon-sm"
-                          tip={noSk || "检测 sessionKey 是否有效（顺带识别套餐）"}
+                          tip={noSk || "检测 sessionKey 是否有效（顺带识别套餐、刷新额度）"}
                           onClick={() => doCheck(a.email)} disabled={!!noSk || checking === a.email}>
                           {checking === a.email ? <Spinner /> : <HeartPulse />}
                         </TipButton>
@@ -1236,7 +1385,7 @@ export default function Accounts({ attach, running, navigate }) {
                 variant="ghost"
                 size="sm"
                 disabled={!!batchCheck || !withSk.length}
-                tip="检测所选账号的 sessionKey 是否有效，并识别套餐（没有 sessionKey 的跳过）"
+                tip="检测所选账号的 sessionKey 是否有效，并识别套餐、刷新额度（没有 sessionKey 的跳过）"
                 onClick={() => runBatchCheck(withSk.map((a) => a.email))}
               >
                 {batchCheck ? <Spinner /> : <HeartPulse />}
@@ -1310,6 +1459,7 @@ export default function Accounts({ attach, running, navigate }) {
                   proxies={proxies}
                   legacyProxy={sheetAcct.proxy || ""}
                 />
+                <UsageDetail acct={sheetAcct} />
                 {sheetAcct.access_token && (
                   <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
                     <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">

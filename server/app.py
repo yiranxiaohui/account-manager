@@ -22,7 +22,8 @@ from account_manager.proxy_pool import ProxyPool, XuiNode
 from account_manager.session_check import inspect_session
 from account_manager.xui import XuiClient
 from server import (
-    account_plan, account_proxy, auth, db, export, oauth_acquire, open_api, sk_import, sub2api,
+    account_plan, account_proxy, account_usage, auth, db, export, oauth_acquire, open_api,
+    sk_import, sub2api,
     sub2api_proxies,
 )
 from server.config_store import CONFIG_LOCK, save_config, to_dict
@@ -562,12 +563,17 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="账号不存在")
         checked_at = state.now_fn()
         res = await asyncio.to_thread(
-            inspect_session, row.get("session_key") or "", row.get("proxy") or ""
+            inspect_session, row.get("session_key") or "", row.get("proxy") or "",
+            want_usage=True, org_uuid=row.get("org_uuid") or None,
         )
         db.update_account_check(state.conn, email, res.status, checked_at)
         plan_fields = account_plan.record(state.conn, email, res.orgs, checked_at)
+        usage_fields = account_usage.record(state.conn, email, res.usage, checked_at)
+        if res.status == "alive" and res.usage is None and res.usage_error:
+            log(f"获取用量额度失败：{email}：{res.usage_error}")
         return {"status": res.status, "detail": res.detail, "checked_at": checked_at,
-                **plan_fields}
+                **plan_fields, **usage_fields,
+                **({"usage_error": res.usage_error} if res.usage_error else {})}
 
     @app.get("/api/accounts/{email}/oauth/organizations")
     async def account_oauth_orgs(email: str, preferred: str | None = None,

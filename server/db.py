@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   check_status TEXT, checked_at TEXT, claimed_at TEXT,
   access_token TEXT, refresh_token TEXT, oauth_expires_at TEXT, oauth_scope TEXT,
   org_uuid TEXT, account_uuid TEXT, oauth_at TEXT, org_name TEXT,
-  plan TEXT, plan_orgs TEXT, plan_checked_at TEXT
+  plan TEXT, plan_orgs TEXT, plan_checked_at TEXT,
+  usage TEXT, usage_checked_at TEXT
 );
 """
 
@@ -48,6 +49,9 @@ _ACCOUNT_EXTRA_COLS = (
     ("plan", "TEXT"),
     ("plan_orgs", "TEXT"),
     ("plan_checked_at", "TEXT"),
+    # 用量额度（account_manager.usage）：usage 是主组织用量摘要的 JSON，检测时顺带刷新
+    ("usage", "TEXT"),
+    ("usage_checked_at", "TEXT"),
 )
 
 
@@ -287,6 +291,16 @@ def update_account_plan(conn, email, plan: str, plan_orgs: str, checked_at: str)
     cur = conn.execute(
         "UPDATE accounts SET plan=?, plan_orgs=?, plan_checked_at=? WHERE email=?",
         (plan or "", plan_orgs or "", checked_at or "", email),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def update_account_usage(conn, email, usage: str, checked_at: str) -> bool:
+    """写入账号用量额度（usage 为 JSON 文本），返回是否有行被更新。"""
+    cur = conn.execute(
+        "UPDATE accounts SET usage=?, usage_checked_at=? WHERE email=?",
+        (usage or "", checked_at or "", email),
     )
     conn.commit()
     return cur.rowcount > 0

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 
 from curl_cffi import requests as cffi_requests
 
+from account_manager import plan as plan_mod
+from account_manager import usage as usage_mod
 from account_manager.browser import mask_proxy, needs_relay, normalize_proxy_url, parse_proxy
 from account_manager.socks_relay import SocksRelay
 
@@ -125,12 +127,18 @@ def _looks_like_org_payload(resp) -> bool:
 
 @dataclass(frozen=True)
 class SessionProbe:
-    """一次 sessionKey 检测的结果。orgs 只在 alive 时有值（/api/organizations 原始条目）。"""
+    """一次 sessionKey 检测的结果。orgs 只在 alive 时有值（/api/organizations 原始条目）。
+
+    usage 是主组织的用量额度摘要（account_manager.usage.summarize），只在 want_usage 且
+    取到时有值；取不到时为 None，原因在 usage_error（不影响存活判定）。
+    """
 
     status: str
     detail: str
     email: str = ""
     orgs: list[dict] = field(default_factory=list)
+    usage: dict | None = None
+    usage_error: str = ""
 
 
 def _account_email(resp) -> str:
@@ -185,15 +193,49 @@ def probe_session(
     return probe.status, probe.detail, probe.email
 
 
+def _fetch_usage(client, session_key: str, orgs: list[dict], org_uuid: str | None,
+                 timeout: float) -> tuple[dict | None, str]:
+    """用同一个客户端查主组织的用量额度，返回 (摘要, 取不到时的原因)。"""
+    org = plan_mod.primary_org(plan_mod.org_items(orgs), org_uuid)
+    if org is None:
+        return None, "没有可查询的组织"
+    if org.get("plan") == plan_mod.API:
+        return None, "Console API 组织没有用量额度"
+    try:
+        resp = client.get(
+            usage_mod.usage_url(org["uuid"]),
+            headers=_HEADERS,
+            cookies={"sessionKey": session_key},
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, f"请求失败：{type(exc).__name__}"
+    if resp.status_code != 200 or _looks_like_shield(resp):
+        return None, f"用量接口响应异常（HTTP {resp.status_code}）"
+    try:
+        summary = usage_mod.summarize(resp.json(), org)
+    except Exception:  # noqa: BLE001
+        summary = None
+    if summary is None:
+        return None, "用量接口响应不是有效的 JSON"
+    return summary, ""
+
+
 def inspect_session(
     session_key: str,
     proxy: str | None = None,
     *,
     want_email: bool = False,
+    want_usage: bool = False,
+    org_uuid: str | None = None,
     timeout: float = 15.0,
     client_factory=None,
 ) -> SessionProbe:
-    """检测 sessionKey，同 probe_session，另外带回组织列表（用于识别套餐）。"""
+    """检测 sessionKey，同 probe_session，另外带回组织列表（用于识别套餐）。
+
+    want_usage=True 且检测为 alive 时，用同一个客户端再查主组织（org_uuid 指定的已授权
+    组织，否则套餐最高的组织）的用量额度。
+    """
     if not session_key:
         return SessionProbe("error", "无 sessionKey")
     try:
@@ -210,6 +252,8 @@ def inspect_session(
 
     email = ""
     orgs: list[dict] = []
+    usage = None
+    usage_error = ""
     try:
         with client:
             resp = client.get(
@@ -231,9 +275,11 @@ def inspect_session(
                     ))
                 except Exception:  # noqa: BLE001
                     email = ""
+            if want_usage and status == "alive":
+                usage, usage_error = _fetch_usage(client, session_key, orgs, org_uuid, timeout)
     except Exception as exc:  # noqa: BLE001
         return SessionProbe("error", f"请求失败：{type(exc).__name__}")
-    return SessionProbe(status, detail, email, orgs)
+    return SessionProbe(status, detail, email, orgs, usage, usage_error)
 
 
 def _classify(resp) -> tuple[str, str]:

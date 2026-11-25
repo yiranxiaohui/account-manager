@@ -95,3 +95,35 @@ def test_account_check_requires_auth(tmp_path):
     _seed(app)
     c = TestClient(app)  # 未登录
     assert c.post("/api/accounts/a@x.com/check").status_code == 401
+
+
+USAGE = {"org_uuid": "o-max", "org_name": "Personal", "spend": None,
+         "windows": [{"kind": "session", "model": "", "percent": 46, "severity": "normal",
+                      "resets_at": "2026-11-25T07:20:00+00:00", "active": False}]}
+
+
+def test_account_check_records_usage(tmp_path):
+    app, c = _client(tmp_path)
+    db.update_account_oauth(app.state.cr.conn, "a@x.com", {"org_uuid": "o-max"})
+    probe = SessionProbe("alive", "有效", orgs=[MAX_ORG], usage=USAGE)
+    with mock.patch("server.app.inspect_session", return_value=probe) as inspect:
+        body = c.post("/api/accounts/a@x.com/check").json()
+    # 检测时顺带查用量，主组织优先用已授权的组织
+    assert inspect.call_args.kwargs == {"want_usage": True, "org_uuid": "o-max"}
+    assert json.loads(body["usage"]) == USAGE
+    assert body["usage_checked_at"] == body["checked_at"]
+    assert "usage_error" not in body
+
+    listed = c.get("/api/accounts").json()[0]
+    assert json.loads(listed["usage"]) == USAGE
+    assert listed["usage_checked_at"] == body["checked_at"]
+
+    # 之后取不到用量（检测失败 / 接口异常）时保留上次的结果，并带回原因
+    probe = SessionProbe("alive", "有效", orgs=[MAX_ORG], usage_error="用量接口响应异常（HTTP 500）")
+    with mock.patch("server.app.inspect_session", return_value=probe):
+        body = c.post("/api/accounts/a@x.com/check").json()
+    assert "usage" not in body
+    assert body["usage_error"] == "用量接口响应异常（HTTP 500）"
+    row = db.get_account(app.state.cr.conn, "a@x.com")
+    assert json.loads(row["usage"]) == USAGE
+    assert row["usage_checked_at"] == "2026-07-31T00:00:00Z"

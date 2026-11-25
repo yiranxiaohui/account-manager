@@ -109,20 +109,28 @@ def org_items(orgs) -> list[dict]:
     return items
 
 
-def primary_plan(items: list[dict], org_uuid: str | None = None) -> str:
-    """账号的主套餐：授权过的组织在列表里就用它，否则取排名最高的组织。
+def primary_org(items: list[dict], org_uuid: str | None = None) -> dict | None:
+    """账号的主组织：授权过的组织在列表里就用它，否则取套餐排名最高的（同名次取靠前的）。
 
     Console API 组织（只有 api 能力、不能聊天）只在没有其它组织时才算。
     """
     if not items:
-        return ""
+        return None
     if org_uuid:
         for item in items:
             if item.get("uuid") == org_uuid:
-                return str(item.get("plan") or UNKNOWN)
-    best = ""
+                return item
+    best = None
     for item in items:
         plan = str(item.get("plan") or UNKNOWN)
-        if not best or _RANK.get(plan, 0) > _RANK.get(best, 0):
-            best = plan
+        if best is None or _RANK.get(plan, 0) > _RANK.get(str(best.get("plan") or UNKNOWN), 0):
+            best = item
     return best
+
+
+def primary_plan(items: list[dict], org_uuid: str | None = None) -> str:
+    """账号的主套餐：主组织（见 primary_org）的套餐。"""
+    org = primary_org(items, org_uuid)
+    if org is None:
+        return ""
+    return str(org.get("plan") or UNKNOWN)
