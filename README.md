@@ -63,7 +63,8 @@ docker compose up -d
 - **增**：「新增账号」手动录入已有账号，只有邮箱必填，可同时填写备注、密码、sessionKey、mailUrl、mailKey，并从代理池中选择代理；邮箱已存在时拒绝（不会覆盖）。也可以继续用「导入 SK…」「手动登录…」批量/交互式建号。
 - **查**：账号以表格列出（账号、订阅、额度、存活检测、代理与操作列；窄屏横向滚动时操作列固定在右侧），点击「账号 / 订阅 / 额度 / 存活检测」表头可排序（再点反向，第三次恢复默认的最新添加在前）。OAuth 授权与「已获取」状态不单独占列，可用状态筛选查找，并显示在编辑抽屉顶部。按邮箱 / 备注 / 代理名称或地址 / sessionKey / 订阅搜索，并用两个独立的下拉框组合筛选：状态（有效、失效、被拦截、未检测、是否已获取、是否有 sessionKey、是否已授权 OAuth）和订阅（Max 全部 / Max 20x / Max 5x / Pro / Team / Enterprise 合并或单独 / Free / 未识别），每个选项后显示对应的账号数。
 - **套餐**：表格「订阅」列显示每个账号的 Claude 套餐徽章（Free / Pro / Max 5x / Max 20x / Team / Enterprise），悬停可看各组织的套餐与 `rate_limit_tier`，可按订阅筛选和排序。套餐在检测 sessionKey（单个检测，或勾选后「检测」批量检测）、导入 SK、接管取 sk、列组织和 OAuth 授权时，根据 `claude.ai/api/organizations` 返回的组织信息自动识别：`capabilities` 含 `claude_max` 为 Max（`rate_limit_tier` 为 `default_claude_max_20x` / `default_claude_max_5x` 区分倍数），含 `claude_pro` 为 Pro，`raven_type` 为 `enterprise` / `team` 为 Enterprise / Team，只有 `chat` 为 Free。账号属于多个组织时，以 OAuth 授权的组织为准，否则取最高的套餐（只有 `api` 能力的 Console 组织不参与），其它不同套餐的组织在徽章上显示为「+N」。检测失败时保留上次识别的结果。
-- **额度**：表格「额度」列显示账号主组织（OAuth 授权的组织，否则套餐最高的组织）在 claude.ai 的用量：Pro / Max 为 5 小时（`5h`）、7 天（`7d`）和各模型周限额（如 `Fable`）的已用百分比进度条，颜色随严重程度变绿 / 黄 / 红；Enterprise 为用量额度金额（如 `$0.37 / $1.00`）；Free 的接口不返回限额，显示「无数据」。悬停可看各窗口的重置时间与获取时间，编辑抽屉里有明细；已过重置时间的窗口按 0% 灰显，等下次检测刷新。额度只在检测 sessionKey（单个或批量）时顺带刷新：用同一条代理再请求一次 `claude.ai/api/organizations/{org_uuid}/usage`（claude.ai「设置 → 用量」页背后的未公开接口，优先读 `limits[]`，旧版响应退回 `five_hour` / `seven_day` 字段，Enterprise 读 `spend`），不做后台轮询；获取失败不影响存活判定，并保留上次的额度。点击「额度」表头首次按已用升序排列（剩余多的在前），排序只看 5 小时 / 7 天，不看单模型周限额。
+- **额度**：表格「额度」列显示账号一个组织（工作空间）在 claude.ai 的用量：Pro / Max 为 5 小时（`5h`）、7 天（`7d`）和各模型周限额（如 `Fable`）的已用百分比进度条，颜色随严重程度变绿 / 黄 / 红；Enterprise 为用量额度金额（如 `$0.37 / $1.00`）；Free 的接口不返回限额，显示「无数据」。悬停可看各窗口的重置时间与获取时间，编辑抽屉里有明细；已过重置时间的窗口按 0% 灰显，等下次检测刷新。额度只在检测 sessionKey（单个或批量）时顺带刷新：用同一条代理再请求一次 `claude.ai/api/organizations/{org_uuid}/usage`（claude.ai「设置 → 用量」页背后的未公开接口，优先读 `limits[]`，旧版响应退回 `five_hour` / `seven_day` 字段，Enterprise 读 `spend`），不做后台轮询；获取失败不影响存活判定，并保留上次的额度。点击「额度」表头首次按已用升序排列（剩余多的在前），排序只看 5 小时 / 7 天，不看单模型周限额。
+- **多个工作空间的额度**：账号属于多个组织时（如同一所学校的 `Northeastern University` 与 `Premium Seat - Northeastern University` 两个 Enterprise 工作空间，前者只有 `$1.00` 用量额度，后者有 5 小时与单模型周限额），检测 sessionKey 会依次查每个能查用量的组织（Console API 组织除外，一次最多 6 个），按组织缓存在 `accounts.usage_orgs`。额度列上方显示当前工作空间的名称，点击可切换：下拉框列出每个工作空间的套餐、上次的额度摘要与获取时间，选中后立即用同一条代理查询该工作空间（`POST /api/accounts/{email}/usage`，body `{"org_uuid": "…"}`），并记住选择（`accounts.usage_org_uuid`）；查询失败时仍切换并显示该工作空间上次的结果。显示哪个工作空间：手动切换的 → OAuth 授权的 → 套餐最高的（同名次取靠前的）。选中多个账号后，批量操作栏的「额度工作空间」可把它们一起切换到同一个工作空间。切换只影响额度显示与排序，不改 OAuth 授权的组织。Enterprise / Team 工作空间没有「7 天全部模型」限额时不补 `7d` 行。
 - **改**：点击邮箱或「编辑」按钮在右侧抽屉中修改上述全部字段，包括邮箱本身（例如把导入时的 `sk-…@sk-import.local` 占位标识改成真实邮箱；正在接管的账号需先结束接管）。勾选账号后可「设置代理」批量更换代理。
 - **删**：每行的删除按钮单个删除，或勾选（支持全选当前筛选结果）后「删除所选」批量删除，均需二次确认。
 
@@ -74,7 +75,7 @@ docker compose up -d
 - 注册任务（选代理池代理、设置页固定注册代理或 3x-ui 专属代理）、导入 SK、手动登录 / 接管拿到的代理同样绑定到代理池条目，代理池里没有时自动新增。
 - 在代理池修改条目地址或「同步 sub2api」后，已绑定的账号自动改用新地址；仍被账号使用的条目不能删除（`PUT /api/config` 返回 409）。
 
-对应的面板内部接口（需面板登录 Cookie）：`GET /api/accounts`、`POST /api/accounts`、`PATCH /api/accounts/{email}`、`DELETE /api/accounts/{email}`、`POST /api/accounts/batch-delete`（body `{"emails": [...]}`）、`POST /api/accounts/batch-proxy`（body `{"emails": [...], "proxy_id": "…"}`）、`GET /api/proxies/usage`（每个代理池条目绑定的账号数）。
+对应的面板内部接口（需面板登录 Cookie）：`GET /api/accounts`、`POST /api/accounts`、`PATCH /api/accounts/{email}`、`DELETE /api/accounts/{email}`、`POST /api/accounts/batch-delete`（body `{"emails": [...]}`）、`POST /api/accounts/batch-proxy`（body `{"emails": [...], "proxy_id": "…"}`）、`GET /api/proxies/usage`（每个代理池条目绑定的账号数）、`POST /api/accounts/{email}/usage`（切换额度显示的工作空间并查询）。
 
 ## Selkies 网页接管（免密登录）
 

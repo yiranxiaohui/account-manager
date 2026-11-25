@@ -7,6 +7,7 @@ import {
   ArrowUpDown,
   Building2,
   Check,
+  ChevronsUpDown,
   Copy,
   Crown,
   Download,
@@ -54,7 +55,10 @@ import {
   displayWindows,
   parseUsage,
   resetIn,
+  shownUsageOrg,
   spendText,
+  usageOrgChoices,
+  usageOrgHint,
   usageSortValue,
   usageSummary,
   usageTone,
@@ -130,6 +134,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -364,61 +371,119 @@ function UsageRow({ label, title, percent, tone, text }) {
   );
 }
 
-// 账号用量额度：检测 sessionKey 时顺带从 claude.ai 取主组织的用量。Pro / Max 显示 5 小时、
-// 7 天与各模型周限额，Enterprise 显示用量额度金额；已过重置时间的窗口按 0 灰显
-function UsageCell({ acct }) {
+// 属于多个工作空间（组织）时切换显示哪个的额度：选中后立即查询该工作空间的用量，并记住选择
+function UsageOrgSwitch({ acct, busy, onSwitch, className }) {
+  const choices = usageOrgChoices(acct);
+  if (choices.length < 2) return null;
+  const current = shownUsageOrg(acct, choices);
+  const name = choices.find((c) => c.uuid === current)?.name || "选择工作空间";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={busy}
+          title={`额度显示的工作空间：${name}\n点击切换（共 ${choices.length} 个）`}
+          className={cn(
+            "-mx-1 inline-flex h-5 max-w-44 min-w-0 items-center gap-1 rounded-sm px-1 text-[11px] text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60",
+            className,
+          )}
+        >
+          {busy ? <Spinner className="size-3" /> : <Building2 className="size-3 shrink-0" />}
+          <span className="truncate">{name}</span>
+          <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-80">
+        <DropdownMenuLabel>切换额度工作空间（选中后立即查询）</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={current} onValueChange={(uuid) => onSwitch(acct.email, uuid)}>
+          {choices.map((c) => (
+            <DropdownMenuRadioItem key={c.uuid} value={c.uuid} className="items-start">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate" title={c.name || c.uuid}>{c.name || c.uuid}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {usageOrgHint(c)}
+                  {c.usage?.checked_at ? ` · ${relTime(c.usage.checked_at)}` : ""}
+                </span>
+              </div>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// 账号用量额度：检测 sessionKey 时顺带从 claude.ai 取各工作空间的用量。Pro / Max 显示 5 小时、
+// 7 天与各模型周限额，Enterprise 显示用量额度金额或席位限额；已过重置时间的窗口按 0 灰显。
+// 属于多个工作空间时上方显示当前工作空间，点击切换
+function UsageCell({ acct, switching, onSwitchOrg }) {
   const usage = parseUsage(acct.usage);
   const title = usageTooltip(acct);
-  if (!usage) return <span title={title}><Dash /></span>;
-  const rows = displayWindows(usage);
-  if (!rows.length && !usage.spend) {
-    return <span className="text-xs text-muted-foreground" title={title}>无数据</span>;
+  const rows = usage ? displayWindows(usage) : [];
+  const orgSwitch = <UsageOrgSwitch acct={acct} busy={switching} onSwitch={onSwitchOrg} />;
+  let body;
+  if (!usage) body = <span title={title}><Dash /></span>;
+  else if (!rows.length && !usage.spend) {
+    body = <span className="text-xs text-muted-foreground" title={title}>无数据</span>;
+  } else {
+    body = (
+      <div className="flex flex-col gap-1" title={title}>
+        {rows.map((w) => {
+          const pct = windowPercent(w);
+          return (
+            <UsageRow
+              key={`${w.kind}:${w.model}`}
+              label={windowShort(w)}
+              title={windowLabel(w)}
+              percent={pct}
+              tone={w.missing ? "muted" : usageTone(w)}
+              text={`${pct}%`}
+            />
+          );
+        })}
+        {usage.spend ? (
+          <UsageRow
+            label="额度"
+            title="用量额度"
+            percent={usage.spend.percent}
+            tone={usageTone(usage.spend)}
+            text={spendText(usage.spend)}
+          />
+        ) : null}
+      </div>
+    );
   }
   return (
-    <div className="flex flex-col gap-1" title={title}>
-      {rows.map((w) => {
-        const pct = windowPercent(w);
-        return (
-          <UsageRow
-            key={`${w.kind}:${w.model}`}
-            label={windowShort(w)}
-            title={windowLabel(w)}
-            percent={pct}
-            tone={w.missing ? "muted" : usageTone(w)}
-            text={`${pct}%`}
-          />
-        );
-      })}
-      {usage.spend ? (
-        <UsageRow
-          label="额度"
-          title="用量额度"
-          percent={usage.spend.percent}
-          tone={usageTone(usage.spend)}
-          text={spendText(usage.spend)}
-        />
-      ) : null}
+    <div className={cn("flex flex-col items-start gap-1", switching && "opacity-60")}>
+      {orgSwitch}
+      {body}
     </div>
   );
 }
 
-// 编辑抽屉里的额度明细：每个窗口一行，带重置时间
-function UsageDetail({ acct }) {
+// 编辑抽屉里的额度明细：每个窗口一行，带重置时间；多个工作空间时可在这里切换
+function UsageDetail({ acct, switching, onSwitchOrg }) {
   const usage = parseUsage(acct.usage);
-  if (!usage) return null;
-  const rows = displayWindows(usage);
+  const multi = usageOrgChoices(acct).length > 1;
+  if (!usage && !multi) return null;
+  const rows = usage ? displayWindows(usage) : [];
   return (
     <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
         <span className="flex items-center gap-1.5 font-medium text-foreground">
           <Gauge className="size-3.5 text-primary" /> 用量额度
         </span>
-        {usage.org_name ? <span className="truncate">{usage.org_name}</span> : null}
-        {acct.usage_checked_at ? (
+        {multi ? (
+          <UsageOrgSwitch acct={acct} busy={switching} onSwitch={onSwitchOrg} className="mx-0 max-w-64" />
+        ) : usage.org_name ? <span className="truncate">{usage.org_name}</span> : null}
+        {usage && acct.usage_checked_at ? (
           <span title={acct.usage_checked_at}>· 获取于 {relTime(acct.usage_checked_at)}</span>
         ) : null}
       </div>
-      {!rows.length && !usage.spend ? (
+      {!usage ? (
+        <p className="text-muted-foreground">该工作空间还没有额度数据，切换到它或检测 sessionKey 时会获取。</p>
+      ) : !rows.length && !usage.spend ? (
         <p className="text-muted-foreground">该组织没有返回用量限额（Free 套餐不提供）。</p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -500,6 +565,8 @@ export default function Accounts({ attach, running, navigate }) {
   const [authorizing, setAuthorizing] = useState(() => new Set());
   const [batchOAuth, setBatchOAuth] = useState(null); // {done, total, ok, failed}
   const [batchCheck, setBatchCheck] = useState(null); // {done, total, alive, failed}
+  const [usageSwitching, setUsageSwitching] = useState(() => new Set());
+  const [batchUsageOrg, setBatchUsageOrg] = useState(null); // {done, total, ok, failed}
   const orgPicker = useOrgPicker();
   const [takeover, setTakeover] = useState({ running: false, email: null });
   const android = useAndroid();
@@ -718,6 +785,83 @@ export default function Accounts({ attach, running, navigate }) {
       ),
     );
     return res;
+  }
+
+  const setSwitchingFlag = (email, on) =>
+    setUsageSwitching((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(email);
+      else next.delete(email);
+      return next;
+    });
+
+  // 切换账号额度显示的工作空间（组织）并立即查询它的用量：先用缓存的结果显示，查到后替换。
+  // 返回是否查到了新数据；quiet 时不弹提示（批量用）
+  async function switchUsageOrg(acctEmail, orgUuid, { quiet = false } = {}) {
+    setSwitchingFlag(acctEmail, true);
+    setAccounts((list) =>
+      list.map((a) => {
+        if (a.email !== acctEmail) return a;
+        const cached = usageOrgChoices(a).find((c) => c.uuid === orgUuid)?.usage;
+        return {
+          ...a,
+          usage_org_uuid: orgUuid,
+          usage: cached ? JSON.stringify(cached) : "",
+          usage_checked_at: cached?.checked_at || "",
+        };
+      }),
+    );
+    const name = usageOrgChoices(accounts.find((a) => a.email === acctEmail) || {})
+      .find((c) => c.uuid === orgUuid)?.name || "所选工作空间";
+    try {
+      const { usage_error: usageError, ...rest } = await api.switchUsageOrg(acctEmail, orgUuid);
+      setAccounts((list) => list.map((a) => (a.email === acctEmail ? { ...a, ...rest } : a)));
+      if (usageError) {
+        if (!quiet) {
+          toast.warning(`「${acctEmail}」查询「${name}」的额度失败：${usageError}${
+            rest.usage ? "，显示上次的结果" : ""}`);
+        }
+        return false;
+      }
+      if (!quiet) {
+        const summary = usageSummary(rest.usage);
+        toast.success(`「${acctEmail}」已切换到「${name}」${summary ? `：${summary}` : ""}`);
+      }
+      return true;
+    } catch (e) {
+      if (e?.status !== 401 && !quiet) {
+        toast.error(e.body?.detail || `「${acctEmail}」切换工作空间失败（${e.status || "?"}）`);
+        refreshLists(); // 撤销先行显示的缓存
+      }
+      return false;
+    } finally {
+      setSwitchingFlag(acctEmail, false);
+    }
+  }
+
+  // 批量切换额度工作空间：前端并发 3 路逐个调用，每个都会立即查询
+  async function runBatchUsageOrg(orgUuid, emails) {
+    const queue = [...emails];
+    const stat = { done: 0, total: emails.length, ok: 0, failed: 0 };
+    setBatchUsageOrg({ ...stat });
+    const worker = async () => {
+      while (queue.length) {
+        const email = queue.shift();
+        const ok = await switchUsageOrg(email, orgUuid, { quiet: true });
+        stat.done += 1;
+        if (ok) stat.ok += 1;
+        else stat.failed += 1;
+        setBatchUsageOrg({ ...stat });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setBatchUsageOrg(null);
+    if (stat.failed) {
+      refreshLists();
+      toast.warning(`已切换 ${stat.total} 个账号：查询成功 ${stat.ok} 个，失败 ${stat.failed} 个（失败的显示上次结果）`);
+    } else {
+      toast.success(`已切换 ${stat.ok} 个账号的额度工作空间`);
+    }
   }
 
   // 批量检测：前端并发 3 路逐个调用，顺带刷新套餐
@@ -979,6 +1123,20 @@ export default function Accounts({ attach, running, navigate }) {
   };
 
   const withSk = selectedVisible.filter((a) => a.session_key);
+  // 所选账号里属于多个工作空间的，可批量切换额度显示的工作空间：按组织汇总，带上账号数
+  const batchUsageOrgs = (() => {
+    const byUuid = new Map();
+    for (const a of withSk) {
+      const choices = usageOrgChoices(a);
+      if (choices.length < 2) continue;
+      for (const c of choices) {
+        const entry = byUuid.get(c.uuid) || { uuid: c.uuid, name: c.name, plan: c.plan, emails: [] };
+        entry.emails.push(a.email);
+        byUuid.set(c.uuid, entry);
+      }
+    }
+    return [...byUuid.values()];
+  })();
 
   // Android 模拟器按钮：本账号在跑就打开画面；运行环境没装先弹安装确认；否则启动。
   const androidAction = (a) => {
@@ -1263,7 +1421,9 @@ export default function Accounts({ attach, running, navigate }) {
                       </div>
                     </TableCell>
                     <TableCell><PlanBadge acct={a} /></TableCell>
-                    <TableCell><UsageCell acct={a} /></TableCell>
+                    <TableCell>
+                      <UsageCell acct={a} switching={usageSwitching.has(a.email)} onSwitchOrg={switchUsageOrg} />
+                    </TableCell>
                     <TableCell>
                       <LiveBadge status={a.check_status} checkedAt={a.checked_at} detail={a.check_detail} />
                     </TableCell>
@@ -1395,6 +1555,31 @@ export default function Accounts({ attach, running, navigate }) {
                 {batchOAuth ? <Spinner /> : <KeyRound />}
                 {batchOAuth ? `授权中 ${batchOAuth.done}/${batchOAuth.total}…` : `获取 OAuth（${withSk.length}）`}
               </TipButton>
+              {batchUsageOrgs.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" disabled={!!batchUsageOrg}
+                      title="把所选账号的额度都切换到同一个工作空间，并立即查询">
+                      {batchUsageOrg ? <Spinner /> : <Building2 />}
+                      {batchUsageOrg ? `切换中 ${batchUsageOrg.done}/${batchUsageOrg.total}…` : "额度工作空间"}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" side="top" className="w-80">
+                    <DropdownMenuLabel>所选账号的额度都切换到（并立即查询）</DropdownMenuLabel>
+                    {batchUsageOrgs.map((o) => (
+                      <DropdownMenuItem key={o.uuid} onSelect={() => runBatchUsageOrg(o.uuid, o.emails)}>
+                        <Building2 />
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <span className="truncate" title={o.name || o.uuid}>{o.name || o.uuid}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {[planLabel(o.plan), `${o.emails.length} 个账号`].filter(Boolean).join(" · ")}
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <TipButton
                 variant="ghost"
                 size="sm"
@@ -1454,7 +1639,8 @@ export default function Accounts({ attach, running, navigate }) {
                   proxies={proxies}
                   legacyProxy={sheetAcct.proxy || ""}
                 />
-                <UsageDetail acct={sheetAcct} />
+                <UsageDetail acct={sheetAcct} switching={usageSwitching.has(sheetAcct.email)}
+                  onSwitchOrg={switchUsageOrg} />
                 {sheetAcct.access_token && (
                   <div className="rounded-lg bg-background p-3 text-xs ring-1 ring-foreground/10">
                     <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">

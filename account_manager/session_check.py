@@ -129,8 +129,10 @@ def _looks_like_org_payload(resp) -> bool:
 class SessionProbe:
     """一次 sessionKey 检测的结果。orgs 只在 alive 时有值（/api/organizations 原始条目）。
 
-    usage 是主组织的用量额度摘要（account_manager.usage.summarize），只在 want_usage 且
-    取到时有值；取不到时为 None，原因在 usage_error（不影响存活判定）。
+    want_usage 时会查账号每个能查用量的组织（工作空间）的用量额度：usage_orgs 是取到的各组织
+    摘要（account_manager.usage.summarize），usage_errors 是取不到的组织 uuid → 原因。
+    usage / usage_error 是其中「显示的组织」（见 plan.usage_org）的摘要与取不到时的原因。
+    取不到用量不影响存活判定。
     """
 
     status: str
@@ -139,6 +141,8 @@ class SessionProbe:
     orgs: list[dict] = field(default_factory=list)
     usage: dict | None = None
     usage_error: str = ""
+    usage_orgs: list[dict] = field(default_factory=list)
+    usage_errors: dict = field(default_factory=dict)
 
 
 def _account_email(resp) -> str:
@@ -193,14 +197,12 @@ def probe_session(
     return probe.status, probe.detail, probe.email
 
 
-def _fetch_usage(client, session_key: str, orgs: list[dict], org_uuid: str | None,
-                 timeout: float) -> tuple[dict | None, str]:
-    """用同一个客户端查主组织的用量额度，返回 (摘要, 取不到时的原因)。"""
-    org = plan_mod.primary_org(plan_mod.org_items(orgs), org_uuid)
-    if org is None:
-        return None, "没有可查询的组织"
-    if org.get("plan") == plan_mod.API:
-        return None, "Console API 组织没有用量额度"
+# 一次检测最多查几个组织的用量（显示的组织排第一个），避免属于很多组织时检测太慢
+MAX_USAGE_ORGS = 6
+
+
+def _query_usage(client, session_key: str, org: dict, timeout: float) -> tuple[dict | None, str]:
+    """用同一个客户端查一个组织的用量额度，返回 (摘要, 取不到时的原因)。"""
     try:
         resp = client.get(
             usage_mod.usage_url(org["uuid"]),
@@ -221,6 +223,63 @@ def _fetch_usage(client, session_key: str, orgs: list[dict], org_uuid: str | Non
     return summary, ""
 
 
+def _fetch_usage(client, session_key: str, orgs: list[dict], preferred: tuple,
+                 timeout: float) -> tuple[dict | None, str, list[dict], dict]:
+    """查账号各组织的用量额度，返回 (显示组织的摘要, 其原因, 各组织摘要, 各组织原因)。
+
+    显示的组织按 plan.usage_org(preferred) 选，排在第一个查；Console API 组织不查。
+    """
+    items = plan_mod.org_items(orgs)
+    primary = plan_mod.usage_org(items, *preferred)
+    if primary is None:
+        return None, ("Console API 组织没有用量额度" if items else "没有可查询的组织"), [], {}
+    targets = [primary] + [item for item in plan_mod.usage_capable(items)
+                           if item["uuid"] != primary["uuid"]]
+    summaries: list[dict] = []
+    errors: dict[str, str] = {}
+    for org in targets[:MAX_USAGE_ORGS]:
+        summary, error = _query_usage(client, session_key, org, timeout)
+        if summary is None:
+            errors[org["uuid"]] = error
+        else:
+            summaries.append(summary)
+    main = summaries[0] if summaries and summaries[0]["org_uuid"] == primary["uuid"] else None
+    return main, errors.get(primary["uuid"], ""), summaries, errors
+
+
+def query_org_usage(
+    session_key: str,
+    proxy: str | None,
+    org: dict,
+    *,
+    timeout: float = 15.0,
+    client_factory=None,
+) -> tuple[dict | None, str]:
+    """只查一个组织（plan.org_items 的条目）的用量额度，返回 (摘要, 取不到时的原因)。
+
+    切换显示的组织时用，不重新检测存活；所有异常都收敛为原因，绝不上抛。
+    """
+    if not session_key:
+        return None, "无 sessionKey"
+    if not isinstance(org, dict) or not org.get("uuid"):
+        return None, "没有可查询的组织"
+    if org.get("plan") == plan_mod.API:
+        return None, "Console API 组织没有用量额度"
+    try:
+        proxy_url = normalize_proxy_url(proxy)
+    except Exception:  # noqa: BLE001
+        return None, f"代理无效：{mask_proxy(proxy or '')}"
+    try:
+        client = (client_factory or _default_client)(proxy_url)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"发起请求失败：{exc}"
+    try:
+        with client:
+            return _query_usage(client, session_key, org, timeout)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"请求失败：{type(exc).__name__}"
+
+
 def inspect_session(
     session_key: str,
     proxy: str | None = None,
@@ -228,13 +287,14 @@ def inspect_session(
     want_email: bool = False,
     want_usage: bool = False,
     org_uuid: str | None = None,
+    usage_org_uuid: str | None = None,
     timeout: float = 15.0,
     client_factory=None,
 ) -> SessionProbe:
     """检测 sessionKey，同 probe_session，另外带回组织列表（用于识别套餐）。
 
-    want_usage=True 且检测为 alive 时，用同一个客户端再查主组织（org_uuid 指定的已授权
-    组织，否则套餐最高的组织）的用量额度。
+    want_usage=True 且检测为 alive 时，用同一个客户端再查各组织的用量额度。显示的组织依次取
+    usage_org_uuid（手动切换的）、org_uuid（已授权的），都不在时取套餐最高的组织。
     """
     if not session_key:
         return SessionProbe("error", "无 sessionKey")
@@ -254,6 +314,8 @@ def inspect_session(
     orgs: list[dict] = []
     usage = None
     usage_error = ""
+    usage_orgs: list[dict] = []
+    usage_errors: dict = {}
     try:
         with client:
             resp = client.get(
@@ -276,10 +338,12 @@ def inspect_session(
                 except Exception:  # noqa: BLE001
                     email = ""
             if want_usage and status == "alive":
-                usage, usage_error = _fetch_usage(client, session_key, orgs, org_uuid, timeout)
+                usage, usage_error, usage_orgs, usage_errors = _fetch_usage(
+                    client, session_key, orgs, (usage_org_uuid, org_uuid), timeout,
+                )
     except Exception as exc:  # noqa: BLE001
         return SessionProbe("error", f"请求失败：{type(exc).__name__}")
-    return SessionProbe(status, detail, email, orgs, usage, usage_error)
+    return SessionProbe(status, detail, email, orgs, usage, usage_error, usage_orgs, usage_errors)
 
 
 def _classify(resp) -> tuple[str, str]:

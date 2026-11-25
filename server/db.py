@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   access_token TEXT, refresh_token TEXT, oauth_expires_at TEXT, oauth_scope TEXT,
   org_uuid TEXT, account_uuid TEXT, oauth_at TEXT, org_name TEXT,
   plan TEXT, plan_orgs TEXT, plan_checked_at TEXT,
-  usage TEXT, usage_checked_at TEXT
+  usage TEXT, usage_checked_at TEXT, usage_orgs TEXT, usage_org_uuid TEXT
 );
 """
 
@@ -49,9 +49,12 @@ _ACCOUNT_EXTRA_COLS = (
     ("plan", "TEXT"),
     ("plan_orgs", "TEXT"),
     ("plan_checked_at", "TEXT"),
-    # 用量额度（account_manager.usage）：usage 是主组织用量摘要的 JSON，检测时顺带刷新
+    # 用量额度（account_manager.usage / server.account_usage）：usage 是当前显示的组织的用量摘要
+    # JSON，usage_orgs 是各组织用量摘要的 JSON 列表，usage_org_uuid 是手动切换显示的组织
     ("usage", "TEXT"),
     ("usage_checked_at", "TEXT"),
+    ("usage_orgs", "TEXT"),
+    ("usage_org_uuid", "TEXT"),
 )
 
 
@@ -296,11 +299,28 @@ def update_account_plan(conn, email, plan: str, plan_orgs: str, checked_at: str)
     return cur.rowcount > 0
 
 
-def update_account_usage(conn, email, usage: str, checked_at: str) -> bool:
-    """写入账号用量额度（usage 为 JSON 文本），返回是否有行被更新。"""
+def update_account_usage(conn, email, usage: str, checked_at: str,
+                         usage_orgs: str | None = None) -> bool:
+    """写入账号用量额度（usage / usage_orgs 为 JSON 文本；usage_orgs 为 None 时不改），
+    返回是否有行被更新。"""
+    if usage_orgs is None:
+        cur = conn.execute(
+            "UPDATE accounts SET usage=?, usage_checked_at=? WHERE email=?",
+            (usage or "", checked_at or "", email),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE accounts SET usage=?, usage_checked_at=?, usage_orgs=? WHERE email=?",
+            (usage or "", checked_at or "", usage_orgs, email),
+        )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def set_account_usage_org(conn, email, org_uuid: str) -> bool:
+    """记下手动切换显示用量的组织（空串表示恢复默认），返回是否有行被更新。"""
     cur = conn.execute(
-        "UPDATE accounts SET usage=?, usage_checked_at=? WHERE email=?",
-        (usage or "", checked_at or "", email),
+        "UPDATE accounts SET usage_org_uuid=? WHERE email=?", (org_uuid or "", email),
     )
     conn.commit()
     return cur.rowcount > 0

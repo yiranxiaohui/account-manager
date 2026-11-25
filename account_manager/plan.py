@@ -128,6 +128,24 @@ def primary_org(items: list[dict], org_uuid: str | None = None) -> dict | None:
     return best
 
 
+def usage_capable(items: list[dict]) -> list[dict]:
+    """能查用量额度的组织：Console API 组织（只有 api 能力）没有用量额度，排除在外。"""
+    return [item for item in items if item.get("plan") != API]
+
+
+def usage_org(items: list[dict], *preferred: str | None) -> dict | None:
+    """显示用量额度的组织：preferred 里第一个在列表中、能查用量的组织（依次传手动切换的组织、
+    已授权的组织），都不在时取套餐排名最高的；没有能查用量的组织时返回 None。"""
+    usable = usage_capable(items)
+    for uuid in preferred:
+        if not uuid:
+            continue
+        for item in usable:
+            if item.get("uuid") == uuid:
+                return item
+    return primary_org(usable)
+
+
 def primary_plan(items: list[dict], org_uuid: str | None = None) -> str:
     """账号的主套餐：主组织（见 primary_org）的套餐。"""
     org = primary_org(items, org_uuid)

@@ -14,12 +14,13 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from account_manager import flow, proxy_probe
+from account_manager import plan as plan_mod
 from account_manager.accounts import AccountRecord
 from account_manager.anymail import AnyMailAccessError, AnyMailClient
 from account_manager.console import log
 from account_manager.oauth import OAuthError
 from account_manager.proxy_pool import ProxyPool, XuiNode
-from account_manager.session_check import inspect_session
+from account_manager.session_check import inspect_session, query_org_usage
 from account_manager.xui import XuiClient
 from server import (
     account_plan, account_proxy, account_usage, auth, db, export, oauth_acquire, open_api,
@@ -565,15 +566,53 @@ def create_app(*, data_dir, config_path, now_fn=None) -> FastAPI:
         res = await asyncio.to_thread(
             inspect_session, row.get("session_key") or "", row.get("proxy") or "",
             want_usage=True, org_uuid=row.get("org_uuid") or None,
+            usage_org_uuid=row.get("usage_org_uuid") or None,
         )
         db.update_account_check(state.conn, email, res.status, checked_at)
         plan_fields = account_plan.record(state.conn, email, res.orgs, checked_at)
-        usage_fields = account_usage.record(state.conn, email, res.usage, checked_at)
-        if res.status == "alive" and res.usage is None and res.usage_error:
-            log(f"获取用量额度失败：{email}：{res.usage_error}")
+        usage_fields = account_usage.record(state.conn, email, res.usage_orgs, checked_at)
+        if res.status == "alive":
+            for org_uuid, reason in res.usage_errors.items():
+                log(f"获取用量额度失败：{email}：组织 {org_uuid[:8]}：{reason}")
+            if not res.usage_errors and res.usage is None and res.usage_error:
+                log(f"获取用量额度失败：{email}：{res.usage_error}")
         return {"status": res.status, "detail": res.detail, "checked_at": checked_at,
                 **plan_fields, **usage_fields,
                 **({"usage_error": res.usage_error} if res.usage_error else {})}
+
+    @app.post("/api/accounts/{email}/usage")
+    async def account_usage_switch(email: str, request: Request, _=Depends(require_auth)):
+        """切换账号显示用量额度的组织（工作空间）并立即查询该组织的用量。
+
+        body {"org_uuid": "..."}：必须是账号已识别的组织（检测 sessionKey 时记录），且不是
+        Console API 组织。查不到时仍切换并沿用该组织上次的结果，原因放在 usage_error。
+        """
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = None
+        org_uuid = body.get("org_uuid") if isinstance(body, dict) else None
+        org_uuid = org_uuid.strip()[:128] if isinstance(org_uuid, str) else ""
+        if not org_uuid:
+            raise HTTPException(status_code=400, detail="请指定组织")
+        row = db.get_account(state.conn, email)
+        if row is None:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        org = next((item for item in plan_mod.usage_capable(account_usage.org_items(row))
+                    if item["uuid"] == org_uuid), None)
+        if org is None:
+            raise HTTPException(status_code=400,
+                                detail="该组织不在账号的组织列表里，或没有用量额度；请先检测账号")
+        now = state.now_fn()
+        summary, error = await asyncio.to_thread(
+            query_org_usage, row.get("session_key") or "", row.get("proxy") or "", org,
+        )
+        if error:
+            log(f"获取用量额度失败：{email}：组织 {org_uuid[:8]}：{error}")
+        fields = account_usage.select(state.conn, email, org_uuid, summary, now)
+        if not fields:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        return {**fields, **({"usage_error": error} if error else {})}
 
     @app.get("/api/accounts/{email}/oauth/organizations")
     async def account_oauth_orgs(email: str, preferred: str | None = None,

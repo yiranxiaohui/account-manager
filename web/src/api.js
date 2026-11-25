@@ -163,6 +163,14 @@ export const api = {
       method: "POST",
     }).then(j),
 
+  // 切换账号额度显示的工作空间（组织）并立即查询它的用量；查不到时回包带 usage_error
+  switchUsageOrg: (email, orgUuid) =>
+    fetch(`/api/accounts/${encodeURIComponent(email)}/usage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ org_uuid: orgUuid }),
+    }).then(j),
+
   accountOAuthOrgs: (email, preferred) =>
     fetch(
       `/api/accounts/${encodeURIComponent(email)}/oauth/organizations${

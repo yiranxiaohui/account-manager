@@ -165,7 +165,9 @@ def _spend(payload: dict) -> dict | None:
 
 
 def summarize(payload, org: dict | None = None) -> dict | None:
-    """usage 响应 → 摘要：{org_uuid, org_name, windows: [...], spend}；不是有效响应时返回 None。
+    """usage 响应 → 摘要：{org_uuid, org_name, plan, windows: [...], spend}；不是有效响应时返回 None。
+
+    org 是 plan.org_items 的组织条目，plan 取自其中（没有时为空串）。
 
     windows 每项为 {kind, model, percent, severity, resets_at, active}，按 5 小时 → 7 天 →
     7 天单模型排序；spend 为 {used, limit, currency, percent, severity} 或 None。
@@ -182,6 +184,7 @@ def summarize(payload, org: dict | None = None) -> dict | None:
     return {
         "org_uuid": _text(org.get("uuid"), 128),
         "org_name": _text(org.get("name"), 128),
+        "plan": _text(org.get("plan"), 32),
         "windows": windows,
         "spend": _spend(payload),
     }

@@ -1,5 +1,10 @@
+import { parsePlanOrgs, planLabel, planRank } from "./plan.js";
+
 // 账号用量额度（后端 account_manager/usage.py 的摘要，检测 sessionKey 时顺带刷新）：
-// {org_uuid, org_name, windows: [{kind, model, percent, severity, resets_at, active}], spend}
+// {org_uuid, org_name, plan, windows: [{kind, model, percent, severity, resets_at, active}], spend,
+//  checked_at}
+// 一个账号可能属于多个组织（工作空间），usage_orgs 缓存每个组织的摘要，usage 是当前显示的那个；
+// 显示哪个由后端决定：手动切换的（usage_org_uuid）→ 已授权 OAuth 的 → 套餐最高的。
 
 const KIND_LABELS = { session: "5 小时", weekly_all: "7 天" };
 const KIND_SHORT = { session: "5h", weekly_all: "7d" };
@@ -83,12 +88,16 @@ export function formatMoney(amount, currency = "USD") {
   return symbol ? `${symbol}${text}` : `${text} ${currency}`;
 }
 
-// 表格展示的窗口：有任意窗口时总是带上 5 小时和 7 天（没出现的 5 小时窗口表示还没开始，按 0 显示），
-// 再接各模型的周限额
+// Enterprise / Team 工作空间可能只有 5 小时与单模型周限额，没有「7 天全部模型」，不补 7 天
+const NO_WEEKLY_ALL = new Set(["enterprise", "team"]);
+
+// 表格展示的窗口：有任意窗口时总是带上 5 小时和 7 天（没出现的窗口表示还没开始，按 0 显示；
+// Enterprise / Team 不补 7 天），再接各模型的周限额
 export function displayWindows(usage) {
   if (!usage || !usage.windows.length) return [];
   const rows = [...usage.windows];
-  for (const kind of ["weekly_all", "session"]) {
+  const fill = NO_WEEKLY_ALL.has(usage.plan) ? ["session"] : ["weekly_all", "session"];
+  for (const kind of fill) {
     if (!rows.some((w) => w.kind === kind)) {
       rows.unshift({ kind, model: "", percent: 0, severity: "normal", resets_at: "", active: false,
         missing: true });
@@ -126,10 +135,77 @@ export function spendText(spend) {
     : `${used} / ${formatMoney(spend.limit, spend.currency)}`;
 }
 
-// 悬浮说明：每个窗口一行（百分比 + 重置时间），再加用量额度、组织与检测时间
+// usage_orgs（各组织用量摘要的 JSON 列表）→ 解析后的摘要数组
+export function parseUsageOrgs(value) {
+  let list = value;
+  if (typeof value === "string") {
+    if (!value) return [];
+    try {
+      list = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map(parseUsage).filter((u) => u && u.org_uuid);
+}
+
+// 可切换显示额度的工作空间：账号已识别的组织（不含 Console API 组织），带上各自缓存的用量。
+// 返回 [{uuid, name, plan, usage}]，按组织列表顺序；没有组织列表时退回缓存里的组织
+export function usageOrgChoices(acct) {
+  const cached = new Map(parseUsageOrgs(acct.usage_orgs).map((u) => [u.org_uuid, u]));
+  const shown = parseUsage(acct.usage);
+  if (shown?.org_uuid && !cached.has(shown.org_uuid)) cached.set(shown.org_uuid, shown);
+  const orgs = parsePlanOrgs(acct.plan_orgs).filter((o) => o.uuid && o.plan !== "api");
+  if (!orgs.length) {
+    return [...cached.values()].map((u) => ({
+      uuid: u.org_uuid, name: u.org_name, plan: u.plan || "", usage: u,
+    }));
+  }
+  return orgs.map((o) => ({
+    uuid: o.uuid,
+    name: o.name || cached.get(o.uuid)?.org_name || "",
+    plan: o.plan || "",
+    usage: cached.get(o.uuid) || null,
+  }));
+}
+
+// 当前显示额度的工作空间 uuid（与后端同一顺序）：手动切换的 → 当前额度所属的 → 已授权的 → 套餐最高的
+export function shownUsageOrg(acct, choices = usageOrgChoices(acct)) {
+  const has = (uuid) => uuid && choices.some((c) => c.uuid === uuid);
+  for (const uuid of [acct.usage_org_uuid, parseUsage(acct.usage)?.org_uuid, acct.org_uuid]) {
+    if (has(uuid)) return uuid;
+  }
+  let best = null;
+  for (const c of choices) if (!best || planRank(c.plan) > planRank(best.plan)) best = c;
+  return best ? best.uuid : "";
+}
+
+// 工作空间下拉框里每项的一行说明：套餐 · 额度摘要（没查过时「未查询」）
+export function usageOrgHint(choice, now = Date.now()) {
+  const parts = [];
+  if (choice.plan) parts.push(planLabel(choice.plan));
+  if (!choice.usage) parts.push("未查询");
+  else parts.push(usageSummary(choice.usage, now) || "无限额数据");
+  return parts.join(" · ");
+}
+
+// 悬浮说明：每个窗口一行（百分比 + 重置时间），再加用量额度、组织与检测时间；
+// 属于多个工作空间时再列出其它工作空间的额度摘要
 export function usageTooltip(acct, now = Date.now()) {
+  const choices = usageOrgChoices(acct);
+  const shownUuid = choices.length > 1 ? shownUsageOrg(acct, choices) : "";
+  const others = choices.filter((c) => c.uuid !== shownUuid);
+  const otherLines = choices.length > 1
+    ? ["其它工作空间（点上方名称切换）：", ...others.map((c) => `· ${c.name || c.uuid}：${usageOrgHint(c, now)}`)]
+    : [];
   const usage = parseUsage(acct.usage);
-  if (!usage) return "还没有额度数据：检测 sessionKey 时会顺带获取";
+  if (!usage) {
+    const head = choices.length > 1
+      ? "当前工作空间还没有额度数据：切换或检测 sessionKey 时会获取"
+      : "还没有额度数据：检测 sessionKey 时会顺带获取";
+    return [head, ...otherLines].join("\n");
+  }
   const lines = [];
   for (const w of displayWindows(usage)) {
     if (w.missing) {
@@ -146,5 +222,5 @@ export function usageTooltip(acct, now = Date.now()) {
   if (!lines.length) lines.push("该组织没有返回用量限额（Free 套餐不提供）");
   if (usage.org_name) lines.push(`组织：${usage.org_name}`);
   if (acct.usage_checked_at) lines.push(`获取于 ${acct.usage_checked_at}`);
-  return lines.join("\n");
+  return [...lines, ...otherLines].join("\n");
 }

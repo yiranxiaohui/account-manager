@@ -3,8 +3,12 @@ import {
   displayWindows,
   formatMoney,
   parseUsage,
+  parseUsageOrgs,
   resetIn,
+  shownUsageOrg,
   spendText,
+  usageOrgChoices,
+  usageOrgHint,
   usageSortValue,
   usageSummary,
   usageTone,
@@ -133,5 +137,92 @@ describe("tooltip", () => {
     expect(usageTooltip({}, NOW)).toContain("检测 sessionKey");
     const expired = { windows: [{ ...MAX.windows[0], resets_at: PAST }] };
     expect(usageTooltip({ usage: expired }, NOW).split("\n")[0]).toBe("5 小时：已重置（上次 86%）");
+  });
+});
+
+const UNI = {
+  org_uuid: "o-uni",
+  org_name: "Northeastern University",
+  plan: "enterprise",
+  windows: [],
+  spend: { used: 0, limit: 1, currency: "USD", percent: 0, severity: "normal" },
+  checked_at: "2026-11-25T05:00:00Z",
+};
+const SEAT = {
+  org_uuid: "o-seat",
+  org_name: "Premium Seat - Northeastern University",
+  plan: "enterprise",
+  spend: null,
+  windows: [
+    { kind: "session", model: "", percent: 100, severity: "critical", resets_at: SOON, active: true },
+    { kind: "weekly_scoped", model: "Fable", percent: 0, severity: "normal", resets_at: WEEK, active: false },
+  ],
+  checked_at: "2026-11-25T05:00:00Z",
+};
+const PLAN_ORGS = JSON.stringify([
+  { uuid: "o-uni", name: "Northeastern University", plan: "enterprise" },
+  { uuid: "o-seat", name: "Premium Seat - Northeastern University", plan: "enterprise" },
+  { uuid: "o-api", name: "Console", plan: "api" },
+]);
+
+describe("workspaces", () => {
+  const acct = {
+    plan_orgs: PLAN_ORGS,
+    usage: JSON.stringify(UNI),
+    usage_orgs: JSON.stringify([UNI, SEAT]),
+  };
+
+  test("enterprise seats do not get a made-up 7d row", () => {
+    expect(displayWindows(parseUsage(SEAT)).map((w) => [windowShort(w), !!w.missing])).toEqual([
+      ["5h", false],
+      ["Fable", false],
+    ]);
+    expect(usageSummary(SEAT, NOW)).toBe("5h 100% · Fable 0%");
+  });
+
+  test("choices follow plan_orgs, skip Console API orgs and carry cached usage", () => {
+    expect(parseUsageOrgs(acct.usage_orgs).map((u) => u.org_uuid)).toEqual(["o-uni", "o-seat"]);
+    expect(parseUsageOrgs("{bad")).toEqual([]);
+    const choices = usageOrgChoices(acct);
+    expect(choices.map((c) => [c.uuid, c.plan, c.usage?.org_uuid])).toEqual([
+      ["o-uni", "enterprise", "o-uni"],
+      ["o-seat", "enterprise", "o-seat"],
+    ]);
+    expect(usageOrgHint(choices[1], NOW)).toBe("Enterprise · 5h 100% · Fable 0%");
+    expect(usageOrgHint({ plan: "enterprise", usage: null })).toBe("Enterprise · 未查询");
+    expect(usageOrgHint({ plan: "free", usage: parseUsage(FREE) })).toBe("Free · 无限额数据");
+    // 旧数据：没有 usage_orgs 时用当前 usage 补上
+    const legacy = usageOrgChoices({ plan_orgs: PLAN_ORGS, usage: JSON.stringify(UNI) });
+    expect(legacy.map((c) => !!c.usage)).toEqual([true, false]);
+    // 没有组织列表时退回缓存里的组织
+    expect(usageOrgChoices({ usage_orgs: [UNI, SEAT] }).map((c) => c.name)).toEqual([
+      "Northeastern University", "Premium Seat - Northeastern University"]);
+    expect(usageOrgChoices({})).toEqual([]);
+  });
+
+  test("shown workspace: switched, then current usage, then authorized, then rank", () => {
+    expect(shownUsageOrg(acct)).toBe("o-uni");
+    expect(shownUsageOrg({ ...acct, usage_org_uuid: "o-seat", usage: "" })).toBe("o-seat");
+    expect(shownUsageOrg({ ...acct, usage_org_uuid: "gone" })).toBe("o-uni");
+    expect(shownUsageOrg({ ...acct, usage: "", org_uuid: "o-seat" })).toBe("o-seat");
+    expect(shownUsageOrg({ plan_orgs: PLAN_ORGS })).toBe("o-uni");
+    expect(shownUsageOrg({})).toBe("");
+  });
+
+  test("tooltip lists the other workspaces", () => {
+    const lines = usageTooltip({ ...acct, usage_checked_at: UNI.checked_at }, NOW).split("\n");
+    expect(lines).toEqual([
+      "用量额度：$0.00 / $1.00（0%）",
+      "组织：Northeastern University",
+      "获取于 2026-11-25T05:00:00Z",
+      "其它工作空间（点上方名称切换）：",
+      "· Premium Seat - Northeastern University：Enterprise · 5h 100% · Fable 0%",
+    ]);
+    const empty = usageTooltip({ ...acct, usage: "", usage_org_uuid: "o-seat", usage_orgs: [UNI] }, NOW);
+    expect(empty.split("\n")).toEqual([
+      "当前工作空间还没有额度数据：切换或检测 sessionKey 时会获取",
+      "其它工作空间（点上方名称切换）：",
+      "· Northeastern University：Enterprise · 额度 $0.00 / $1.00",
+    ]);
   });
 });
