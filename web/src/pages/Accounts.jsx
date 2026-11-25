@@ -207,8 +207,6 @@ const SORTS = {
   // 额度首次点击按升序：剩余额度多的在前
   usage: { dir: "asc", value: (a) => usageSortValue(a) },
   check: { dir: "desc", value: (a) => (a.check_status ? timeValue(a.checked_at) ?? 0 : null) },
-  oauth: { dir: "desc", value: (a) => (a.access_token ? timeValue(a.oauth_expires_at) ?? 0 : null) },
-  claimed: { dir: "desc", value: (a) => timeValue(a.claimed_at) },
 };
 
 function sortAccounts(list, sort) {
@@ -1207,8 +1205,6 @@ export default function Accounts({ attach, running, navigate }) {
                 <SortHead label="订阅" sortKey="plan" sort={sort} onSort={toggleSort} />
                 <SortHead label="额度" sortKey="usage" sort={sort} onSort={toggleSort} />
                 <SortHead label="存活检测" sortKey="check" sort={sort} onSort={toggleSort} />
-                <SortHead label="OAuth" sortKey="oauth" sort={sort} onSort={toggleSort} />
-                <SortHead label="获取" sortKey="claimed" sort={sort} onSort={toggleSort} />
                 <TableHead>代理</TableHead>
                 <TableHead className="sticky right-0 z-10 bg-card bg-linear-to-r from-muted/30 to-muted/30 pr-4 text-right">
                   操作
@@ -1271,8 +1267,6 @@ export default function Accounts({ attach, running, navigate }) {
                     <TableCell>
                       <LiveBadge status={a.check_status} checkedAt={a.checked_at} detail={a.check_detail} />
                     </TableCell>
-                    <TableCell><OAuthBadge acct={a} /></TableCell>
-                    <TableCell><ClaimedBadge acct={a} /></TableCell>
                     <TableCell><ProxyBadge acct={a} proxyById={proxyById} /></TableCell>
                     <TableCell className={cn("sticky right-0 z-10 pr-4", STICKY_BG)}>
                       <div className="flex items-center justify-end gap-0.5">
@@ -1447,6 +1441,7 @@ export default function Accounts({ attach, running, navigate }) {
                   <StatusBadge status={sheetAcct.status} />
                   <LiveBadge status={sheetAcct.check_status} checkedAt={sheetAcct.checked_at}
                     detail={sheetAcct.check_detail} />
+                  {sheetAcct.access_token ? <OAuthBadge acct={sheetAcct} /> : null}
                   {sheetAcct.claimed_at ? <ClaimedBadge acct={sheetAcct} /> : null}
                 </div>
               </SheetHeader>
