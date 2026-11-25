@@ -6,10 +6,11 @@
 |------------|---------------------------|--------------------------|-----------------------------|
 | Free       | chat                      | default_claude_ai        | claude_free                 |
 | Pro        | chat, claude_pro          | default_claude_ai        | claude_pro                  |
-| Max 20x    | chat, claude_max          | default_claude_max_20x   | claude_max 20x              |
+| Ultra      | chat, claude_max          | default_claude_max_20x   | claude_max 20x              |
 | Enterprise | chat, raven, raven_enterprise（raven_type=enterprise） | manual_tier_3 等 | claude_enterprise |
 | Console API| api, api_individual（无 chat） | auto_trust_tier_a 等 | api_individual              |
 
+Ultra 即原来的 Max 20x，接口里仍是 claude_max + 20x，标识沿用 max_20x；字段里出现 ultra 时也识别为 Ultra。
 Max 5x 按同样的规律取 rate_limit_tier 里的 5x；Team 为 raven_type=team / capabilities 含 raven。
 """
 from __future__ import annotations
@@ -18,7 +19,7 @@ FREE = "free"
 PRO = "pro"
 MAX = "max"
 MAX_5X = "max_5x"
-MAX_20X = "max_20x"
+MAX_20X = "max_20x"  # Ultra（原 Max 20x）
 TEAM = "team"
 ENTERPRISE = "enterprise"
 API = "api"
@@ -29,7 +30,7 @@ PLAN_LABELS = {
     PRO: "Pro",
     MAX: "Max",
     MAX_5X: "Max 5x",
-    MAX_20X: "Max 20x",
+    MAX_20X: "Ultra",
     TEAM: "Team",
     ENTERPRISE: "Enterprise",
     API: "API",
@@ -50,7 +51,7 @@ def _caps(org: dict) -> set[str]:
 def _max_multiplier(*hints: str) -> str:
     for hint in hints:
         text = hint.lower()
-        if "20x" in text:
+        if "20x" in text or "ultra" in text:
             return MAX_20X
         if "5x" in text:
             return MAX_5X
@@ -65,6 +66,8 @@ def org_plan(org: dict) -> str:
     tier = str(org.get("rate_limit_tier") or "")
     analytics = str(org.get("analytics_subscription_plan") or "")
     raven = str(org.get("raven_type") or "").lower()
+    if "claude_ultra" in caps or analytics.startswith("claude_ultra"):
+        return MAX_20X
     if "claude_max" in caps or analytics.startswith("claude_max"):
         return _max_multiplier(tier, analytics)
     if "claude_pro" in caps or analytics == "claude_pro":

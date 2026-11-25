@@ -40,6 +40,12 @@ API = {"uuid": "o-api", "name": "console", "raven_type": None,
     ({**MAX20, "rate_limit_tier": "", "analytics_subscription_plan": ""}, "max"),
     # rate_limit_tier 缺失时退回 analytics_subscription_plan 判倍数
     ({**MAX20, "rate_limit_tier": ""}, "max_20x"),
+    # Ultra（原 Max 20x）：字段里改叫 ultra 时也认作 max_20x
+    ({**MAX20, "rate_limit_tier": "default_claude_ultra", "analytics_subscription_plan": ""}, "max_20x"),
+    ({**MAX20, "capabilities": ["chat", "claude_ultra"], "rate_limit_tier": "",
+      "analytics_subscription_plan": ""}, "max_20x"),
+    ({**MAX20, "capabilities": ["chat"], "rate_limit_tier": "",
+      "analytics_subscription_plan": "claude_ultra"}, "max_20x"),
     (ENT, "enterprise"),
     ({"uuid": "o-team", "raven_type": "team", "capabilities": ["chat", "raven"]}, "team"),
     (API, "api"),

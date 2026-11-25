@@ -5,7 +5,7 @@ export const PLAN_LABELS = {
   pro: "Pro",
   max: "Max",
   max_5x: "Max 5x",
-  max_20x: "Max 20x",
+  max_20x: "Ultra", // 原 Max 20x，标识沿用 max_20x
   team: "Team",
   enterprise: "Enterprise",
   api: "API",
@@ -21,7 +21,7 @@ const PLAN_TONES = {
   enterprise: "info",
 };
 
-// 筛选分组：Max 不分倍数，Team 与 Enterprise 合并
+// 筛选分组：Ultra 与各档 Max 合并，Team 与 Enterprise 合并
 const PLAN_GROUPS = {
   max: "max",
   max_5x: "max",
@@ -51,8 +51,8 @@ export function matchPlan(plan, group) {
 // 「Max 倍数未知」只在确有账号时才列出，见 planFilterOptions。
 export const PLAN_FILTERS = [
   ["all", "全部订阅"],
-  ["group:max", "Max 全部"],
-  ["max_20x", "Max 20x"],
+  ["group:max", "Ultra / Max 全部"],
+  ["max_20x", "Ultra"],
   ["max_5x", "Max 5x"],
   ["max", "Max 倍数未知"],
   ["pro", "Pro"],
