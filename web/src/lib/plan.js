@@ -3,8 +3,8 @@
 export const PLAN_LABELS = {
   free: "Free",
   pro: "Pro",
-  max: "Max",
-  max_5x: "Max 5x",
+  max: "Ultra / Max", // 有 claude_max 但分不出 20x / 5x
+  max_5x: "Max", // 原 Max 5x，标识沿用 max_5x
   max_20x: "Ultra", // 原 Max 20x，标识沿用 max_20x
   team: "Team",
   enterprise: "Enterprise",
@@ -48,13 +48,13 @@ export function matchPlan(plan, group) {
 }
 
 // 订阅筛选项：[值, 显示名]。group:* 按 PLAN_GROUPS 分组匹配，none 为未识别，其余按套餐标识精确匹配。
-// 「Max 倍数未知」只在确有账号时才列出，见 planFilterOptions。
+// 「Ultra / Max 未区分」只在确有账号时才列出，见 planFilterOptions。
 export const PLAN_FILTERS = [
   ["all", "全部订阅"],
   ["group:max", "Ultra / Max 全部"],
   ["max_20x", "Ultra"],
-  ["max_5x", "Max 5x"],
-  ["max", "Max 倍数未知"],
+  ["max_5x", "Max"],
+  ["max", "Ultra / Max 未区分"],
   ["pro", "Pro"],
   ["group:team", "Team / Enterprise"],
   ["team", "Team"],
@@ -70,7 +70,7 @@ export function matchPlanFilter(plan, filter) {
   return plan === filter;
 }
 
-// 订阅下拉框的选项与每项数量；数量为 0 的「Max 倍数未知」不显示（当前选中时除外）
+// 订阅下拉框的选项与每项数量；数量为 0 的「Ultra / Max 未区分」不显示（当前选中时除外）
 export function planFilterOptions(accounts, current = "all") {
   return PLAN_FILTERS.map(([value, label]) => ({
     value,

@@ -20,6 +20,8 @@ const ORGS = JSON.stringify([
 describe("plan labels", () => {
   test("maps known plans and keeps unknown keys", () => {
     expect(planLabel("max_20x")).toBe("Ultra");
+    expect(planLabel("max_5x")).toBe("Max");
+    expect(planLabel("max")).toBe("Ultra / Max");
     expect(planLabel("pro")).toBe("Pro");
     expect(planLabel("")).toBe("");
     expect(planLabel("future_plan")).toBe("future_plan");

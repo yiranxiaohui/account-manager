@@ -233,7 +233,7 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 
 - `default`：调用 `accounts/oauth` 时不传 `org_uuid` 会使用的组织。
 - `current`：该账号上次授权的组织（没授权过为空字符串）。
-- `plan`：该组织的套餐，取值 `free` / `pro` / `max` / `max_5x` / `max_20x`（Ultra，原 Max 20x）/ `team` / `enterprise` / `api` / `unknown`。调用本接口时会顺带更新账号的套餐（导出字段 `plan`）。
+- `plan`：该组织的套餐，取值 `free` / `pro` / `max`（分不出 Ultra / Max）/ `max_5x`（Max，原 Max 5x）/ `max_20x`（Ultra，原 Max 20x）/ `team` / `enterprise` / `api` / `unknown`。调用本接口时会顺带更新账号的套餐（导出字段 `plan`）。
 - 错误码同 `accounts/oauth`（`400` / `404` / `422`）。
 
 示例：

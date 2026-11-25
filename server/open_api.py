@@ -117,7 +117,7 @@ class OrgItem(BaseModel):
     capabilities: list[str]
     rate_limit_tier: str
     billing_type: str
-    plan: str = Field("", description="该组织的套餐：free / pro / max / max_5x / max_20x（Ultra）/ team / "
+    plan: str = Field("", description="该组织的套餐：free / pro / max（Ultra / Max 未区分）/ max_5x（Max）/ max_20x（Ultra）/ team / "
                                        "enterprise / api / unknown")
 
 

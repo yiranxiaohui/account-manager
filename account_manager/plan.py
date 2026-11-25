@@ -11,14 +11,15 @@
 | Console API| api, api_individual（无 chat） | auto_trust_tier_a 等 | api_individual              |
 
 Ultra 即原来的 Max 20x，接口里仍是 claude_max + 20x，标识沿用 max_20x；字段里出现 ultra 时也识别为 Ultra。
-Max 5x 按同样的规律取 rate_limit_tier 里的 5x；Team 为 raven_type=team / capabilities 含 raven。
+Max 即原来的 Max 5x，按同样的规律取 rate_limit_tier 里的 5x，标识沿用 max_5x；有 claude_max 但分不出
+20x / 5x 时为 max（显示 Ultra / Max）。Team 为 raven_type=team / capabilities 含 raven。
 """
 from __future__ import annotations
 
 FREE = "free"
 PRO = "pro"
-MAX = "max"
-MAX_5X = "max_5x"
+MAX = "max"  # Ultra / Max 未区分
+MAX_5X = "max_5x"  # Max（原 Max 5x）
 MAX_20X = "max_20x"  # Ultra（原 Max 20x）
 TEAM = "team"
 ENTERPRISE = "enterprise"
@@ -28,8 +29,8 @@ UNKNOWN = "unknown"
 PLAN_LABELS = {
     FREE: "Free",
     PRO: "Pro",
-    MAX: "Max",
-    MAX_5X: "Max 5x",
+    MAX: "Ultra / Max",
+    MAX_5X: "Max",
     MAX_20X: "Ultra",
     TEAM: "Team",
     ENTERPRISE: "Enterprise",
